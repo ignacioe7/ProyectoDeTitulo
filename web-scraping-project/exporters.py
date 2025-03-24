@@ -29,8 +29,8 @@ async def save_to_excel(valparaiso_data: Dict, filename: str = None) -> None:
                 'Attraction Name': [],
                 'Type': [],
                 'Score': [],
-                'Total Reviews': [],  # Total de reseñas según el JSON
-                'Total Available Reviews': [],  # Total de reseñas extraídas
+                'Total Reviews': [], 
+                'Total English Reviews': [],
                 'URL': []
             }
 
@@ -51,14 +51,14 @@ async def save_to_excel(valparaiso_data: Dict, filename: str = None) -> None:
                     review_data = {
                         'Attraction': attraction.get('place_name', 'Desconocido'),
                         'User': review.get('username', 'SIN NOMBRE'),
+                        'Companion Type': review.get('companion_type', 'SIN INFORMACIÓN'),
                         'Location': review.get('location', 'SIN UBICACIÓN'),
                         'Contributions': review.get('contributions', 0),
                         'Rating': review.get('rating', 0.0),
-                        'Title': review.get('title', 'SIN TÍTULO'),
-                        'Text': review.get('review_text', 'SIN TEXTO DE RESEÑA'),
                         'Visit Date': review.get('visit_date', 'SIN FECHA'),
                         'Written Date': review.get('written_date', 'SIN FECHA DE ESCRITURA'),
-                        'Companion Type': review.get('companion_type', 'SIN INFORMACIÓN')
+                        'Title': review.get('title', 'SIN TÍTULO'),
+                        'Text': review.get('review_text', 'SIN TEXTO DE RESEÑA')
                     }
                     all_reviews.append(review_data)
 
