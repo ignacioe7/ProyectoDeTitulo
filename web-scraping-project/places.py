@@ -1,4 +1,6 @@
-from typing import List, Optional
+from datetime import datetime
+import re
+from typing import Dict, List, Optional
 import asyncio
 import json
 import httpx
@@ -20,21 +22,79 @@ class AttractionScraper:
     if self.client:
       await self.client.aclose()
 
-  async def scrape_page(self, url: str) -> List[str]:
-    """Extrae URLs de atracciones de una sola página"""
-    response = await self.client.get(url)
-    selector = Selector(text=response.text)
-    
-    urls = []
-    attraction_divs = selector.css('div.hZuqH.y')
-    
-    for div in attraction_divs:
-      href = div.css('header.VLKGO div.NxKBB div div.alPVI a::attr(href)').get()
-      if href:
-        urls.append(f"{BASE_URL}{href}")
-        log.debug(f"URL de atracción encontrada: {href}")
-    
-    return urls
+  async def scrape_page(self, url: str) -> List[Dict]:
+      """Extrae URLs y metadatos de atracciones de una sola página"""
+      response = await self.client.get(url)
+      selector = Selector(text=response.text)
+      
+      attractions_data = []
+      attraction_divs = selector.css('div.hZuqH.y')
+      
+      for div in attraction_divs:
+          try:
+              # Obtener URL
+              href = div.css('header.VLKGO div.NxKBB div div.alPVI a::attr(href)').get()
+              if not href:
+                  continue
+                  
+              full_url = f"{BASE_URL}{href}"
+              
+              
+              # Extraer nombre del lugar
+              raw_name = None
+              raw_name = div.xpath('.//div[contains(@class, "XfVdV")]/text()').getall()
+              if raw_name and len(raw_name) > 0:
+                  place_name = ' '.join([t.strip() for t in raw_name if t.strip()])
+              else:
+                  place_name = (
+                      div.xpath('string(.//div[contains(@class, "XfVdV") and contains(@class, "AIbhI")])').get() or
+                      div.xpath('string(.//h3[contains(@class, "biGQs")]//div[contains(@class, "XfVdV")])').get() or
+                      div.xpath('string(.//div[contains(@class, "ATCbm")]//div[contains(@class, "XfVdV")])').get() or
+                      div.xpath('string(.//h3[contains(@class, "biGQs")]//span//div[contains(@class, "XfVdV")])').get() or
+                      "Lugar Sin Nombre"
+                  )
+              
+              
+              # Limpiar nombre del lugar
+              place_name = place_name.strip()
+              place_name = re.sub(r'^\d+\.\s*', '', place_name)
+              if not place_name:
+                  place_name = "Lugar Sin Nombre"
+              
+              
+              # Extraer puntuación
+              rating_text = div.xpath('.//svg[contains(@class, "UctUV")]//title/text()').get()
+              rating = 0.0
+              if rating_text:
+                  match = re.search(r'(\d+(\.\d+)?)', rating_text)
+                  if match:
+                      rating = float(match.group(1))
+              
+              # Extraer número de reseñas
+              reviews_count = 0
+              reviews_text = div.css('span.biGQs._P.pZUbB.osNWb::text').get()
+              if reviews_text:
+                  reviews_count = int(reviews_text.replace(',', ''))
+              
+              # Extraer tipo de lugar
+              place_type_raw = div.css('div.biGQs._P.pZUbB.hmDzD::text').get() or "Sin categoría"
+              place_type = place_type_raw.replace(' • ', ', ').strip()
+              
+              # Almacenar datos completos
+              attraction_data = {
+                  "place_name": place_name.strip(),
+                  "place_type": place_type.strip(),
+                  "rating": rating,
+                  "reviews_count": reviews_count,
+                  "url": full_url
+              }
+              
+              attractions_data.append(attraction_data)
+              
+          except Exception as e:
+              log.warning(f"Error extrayendo datos de una atracción: {e}")
+      
+      return attractions_data
 
   async def get_next_page_url(self, response_text: str) -> Optional[str]:
     """Obtiene URL para la siguiente página de atracciones"""
@@ -46,51 +106,42 @@ class AttractionScraper:
       return f"{BASE_URL}{next_link}"
     return None
 
-  async def get_all_attractions(self) -> List[str]:
-    """Obtiene URLs para todas las atracciones en Valparaíso"""
-    try:
-      urls = []
-      page_count = 1
-      current_url = f"{BASE_URL}/Attractions-g294306-Activities-a_allAttractions.true-Valparaiso_Valparaiso_Region.html"
-      
-      while current_url:
-        log.info(f"Extrayendo página {page_count}")
-        response = await self.client.get(current_url)
-        
-        # Obtener URLs de la página actual
-        page_urls = await self.scrape_page(current_url)
-        urls.extend(page_urls)
-        log.info(f"Encontradas {len(page_urls)} atracciones en página {page_count}")
-        
-        # Guardar progreso en archivo
-        with open('attractions_urls.json', 'w', encoding='utf-8') as f:
-          json.dump(urls, f, indent=2)
-        
-        # Obtener URL de siguiente página
-        next_url = await self.get_next_page_url(response.text)
-        if next_url:
-          current_url = next_url
-          page_count += 1
-          await asyncio.sleep(2)  # Limitación de tasa
-        else:
-          break
-      
-      return urls
-      
-    except Exception as e:
-      log.error(f"Error extrayendo atracciones: {e}")
-      raise
+  async def get_all_attractions(self) -> List[Dict]:
+      """Obtiene datos de todas las atracciones en Valparaíso"""
+      try:
+          all_attractions = []
+          page_count = 1
+          current_url = f"{BASE_URL}/Attractions-g294306-Activities-a_allAttractions.true-Valparaiso_Valparaiso_Region.html"
+          
+          while current_url:
+              response = await self.client.get(current_url)
+              
+              # Obtener datos de la página actual
+              page_attractions = await self.scrape_page(current_url)
+              all_attractions.extend(page_attractions)
+              log.info(f"Encontradas {len(page_attractions)} atracciones en página {page_count}")
+              
+              # Guardar progreso en archivo
+              with open('attractions_data.json', 'w', encoding='utf-8') as f:
+                  json.dump({
+                      "attractions": all_attractions
+                  }, f, indent=2, ensure_ascii=False)
+              
+              # Obtener URL de siguiente página
+              next_url = await self.get_next_page_url(response.text)
+              if next_url:
+                  current_url = next_url
+                  page_count += 1
+                  await asyncio.sleep(2)
+              else:
+                  break
+          
+          return all_attractions
+          
+      except Exception as e:
+          log.error(f"Error extrayendo atracciones: {e}")
+          raise
 
-
-async def load_urls_from_json(filename: str = 'attractions_urls.json') -> List[str]:
-  """Carga URLs de atracciones desde archivo JSON"""
-  try:
-    with open(filename, 'r', encoding='utf-8') as f:
-      return json.load(f)
-  except FileNotFoundError:
-    log.error(f"Archivo {filename} no encontrado")
-    return []
-  
 async def main():
   """Función principal de ejecución"""
   log.info("Iniciando extractor de URLs de atracciones")
