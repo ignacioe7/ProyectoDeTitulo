@@ -13,35 +13,57 @@ from exporters import save_to_excel, load_json
 
 
 async def scrape_attraction_reviews(client: httpx.AsyncClient, url: str, attraction_metadata: Dict, max_pages: Optional[int] = None) -> Dict:
-    """
-    Extrae todas las reseñas de un lugar con paginación usando metadatos conocidos.
-    """
-    reviews_data = []
-    base_url = url.split('?')[0]
-
-    # Usar metadatos conocidos
-    place_name = attraction_metadata["place_name"]
-    total_reviews = attraction_metadata["reviews_count"]
-    place_type = attraction_metadata["place_type"]
-    rating = attraction_metadata["rating"]
-
-    # Obtener métricas actualizadas
-    updated_metrics = await count_attraction_metrics(client, url, total_reviews)
-    attraction_metadata.update(updated_metrics)
-
-    # Calcular páginas a procesar
-    total_pages = attraction_metadata.get("total_pages", 1)
-    max_pages_limit = min(total_pages, max_pages) if max_pages is not None else total_pages
-
-    log.info(f"Procesando {place_name}: {updated_metrics['reviews_count']} reseñas en {max_pages_limit} páginas")
-
-    # Extraer reseñas de todas las páginas
-    reviews_data = await extract_reviews_from_all_pages(client, base_url, attraction_metadata, max_pages_limit)
-
+    """Extrae reseñas en inglés de una atracción con reintentos"""
+    max_retries = 3
+    retry_delays = [300, 600, 900] 
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Obtener métricas actualizadas
+            updated_metrics = await count_attraction_metrics(client, url, attraction_metadata["reviews_count"])
+            
+            # Usar english_reviews para el scraping
+            english_reviews = updated_metrics.get("english_reviews", 0)
+            english_pages = updated_metrics.get("english_pages", 0)
+            
+            max_pages_limit = min(english_pages, max_pages) if max_pages else english_pages
+            
+            log.info(f"Procesando {attraction_metadata['place_name']}: {english_reviews} reseñas en inglés ({max_pages_limit} páginas) | Intento {attempt}/{max_retries}")
+            
+            # Extraer reseñas (solo inglés)
+            reviews_data = await extract_reviews_from_all_pages(client, url.split('?')[0], attraction_metadata, max_pages_limit)
+            
+            if reviews_data:
+                return {
+                    **attraction_metadata,
+                    "total_reviews": updated_metrics["total_reviews"],
+                    "english_reviews": english_reviews,
+                    "url": url.split('?')[0],
+                    "reviews": reviews_data
+                }
+            
+            # Si no hay reseñas pero es el primer intento, reintentar
+            if attempt < max_retries:
+                delay = retry_delays[attempt - 1]
+                log.warning(f"No se encontraron reseñas en el intento {attempt}. Reintentando en {delay} segundos...")
+                await asyncio.sleep(delay)
+                
+        except Exception as e:
+            if attempt < max_retries:
+                delay = retry_delays[attempt - 1]
+                log.error(f"Error en el intento {attempt}: {e}. Reintentando en {delay} segundos...")
+                await asyncio.sleep(delay)
+            else:
+                log.error(f"Fallo definitivo después de {max_retries} intentos: {e}")
+    
+    # Si llegamos aquí es porque todos los intentos fallaron
     return {
         **attraction_metadata,
-        "url": base_url,
-        "reviews": reviews_data
+        "total_reviews": 0,
+        "english_reviews": 0,
+        "url": url.split('?')[0],
+        "reviews": [],
+        "scrape_status": f"failed_after_{max_retries}_attempts"
     }
 
 
@@ -49,7 +71,9 @@ async def smart_sleep(page: int):
     """
     Realiza pausas inteligentes para evitar ser bloqueado.
     """
-    if page % 50 == 0:
+    if page % 100 == 0:
+        pause_time = 60
+    elif page % 50 == 0:
         pause_time = 45
     elif page % 10 == 0:
         pause_time = 15
@@ -60,10 +84,7 @@ async def smart_sleep(page: int):
 
 
 async def process_attractions_with_reviews(attractions: List[Dict], max_pages: Optional[int] = None) -> Dict:
-    """
-    Procesa las atracciones que tienen reseñas (reviews_count > 0) y recopila sus reseñas.
-    Guarda los datos de cada atracción individualmente.
-    """
+    """Procesa atracciones con manejo de errores mejorado"""
     valparaiso_data = {
         "city": "Valparaíso",
         "total_attractions": len(attractions),
@@ -83,26 +104,31 @@ async def process_attractions_with_reviews(attractions: List[Dict], max_pages: O
             }
 
             log.info(f"\n{'='*80}")
-            log.info(f"Procesando atracción con reseñas [{i}/{len(attractions)}]: {basic_metadata['place_name']}")
+            log.info(f"Procesando atracción [{i}/{len(attractions)}]: {basic_metadata['place_name']}")
 
             try:
-                # Llamar a la función que recopila las reseñas
                 attraction_data = await scrape_attraction_reviews(client, url, basic_metadata, max_pages)
-
-                if attraction_data:
-                    # Añadir a la estructura principal
+                
+                if attraction_data.get("reviews"):
                     valparaiso_data["attractions"].append(attraction_data)
-
-                    # Guardar los datos de la atracción individualmente
                     await save_to_excel(valparaiso_data, 'valparaiso_reviews.xlsx')
-                    log.info(f"Datos guardados para: {attraction_data['place_name']}")
+                    log.success(f"Éxito procesando: {attraction_data['place_name']} ({len(attraction_data['reviews'])} reseñas)")
+                else:
+                    log.warning(f"Atracción sin reseñas válidas después de reintentos: {basic_metadata['place_name']}")
+                    valparaiso_data["attractions_without_reviews"].append({
+                        **basic_metadata,
+                        "scrape_status": attraction_data.get("scrape_status", "no_reviews_found")
+                    })
 
-                    # Tomar un descanso de 15 segundos antes de continuar
-                    await asyncio.sleep(15)
+                await asyncio.sleep(45)
+
             except Exception as e:
-                log.error(f"Error procesando {basic_metadata['place_name']}: {e}")
-                log.info("Continuando con la siguiente atracción...")
-                await asyncio.sleep(15)
+                log.error(f"Error grave procesando {basic_metadata['place_name']}: {e}")
+                valparaiso_data["attractions_without_reviews"].append({
+                    **basic_metadata,
+                    "scrape_status": f"error: {str(e)}"
+                })
+                continue
 
     return valparaiso_data
 

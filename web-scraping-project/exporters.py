@@ -42,7 +42,7 @@ async def save_to_excel(valparaiso_data: Dict, filename: str = None) -> None:
                 summary_data['Attraction Name'].append(attraction.get('place_name', 'Desconocido'))
                 summary_data['Type'].append(attraction.get('place_type', 'Desconocido')) 
                 summary_data['Score'].append(attraction.get('rating', 0.0))
-                summary_data['Total Reviews'].append(attraction.get('reviews_count', 0))
+                summary_data['Total Reviews'].append(attraction.get('total_reviews', 0))
                 summary_data['Total English Reviews'].append(len(attraction.get('reviews', [])))
                 summary_data['URL'].append(attraction.get('url', ''))
 

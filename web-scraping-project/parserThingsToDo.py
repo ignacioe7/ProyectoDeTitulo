@@ -1,5 +1,3 @@
-from asyncio import log
-from datetime import datetime
 import re
 import asyncio
 from typing import Dict, List, Optional
@@ -17,40 +15,43 @@ PROBLEMATIC_URLS = []
 
 async def count_attraction_metrics(client: httpx.AsyncClient, url: str, reviews_count: int) -> Dict:
     """
-    Cuenta las métricas de una atracción, como el número de reseñas y páginas.
-    Retorna un diccionario con las métricas.
+    Cuenta las métricas de una atracción.
+    Retorna:
+    - total_reviews: Todas las reseñas (de places.py)
+    - english_reviews: Solo reseñas en inglés disponibles
+    - english_pages: Páginas de reseñas en inglés
     """
     try:
         response = await client.get(url)
         selector = Selector(response.text)
 
-        # Verificar el botón de idioma
+        # Verificar si estamos en vista de inglés
         language_button = selector.css('button.Datwj[aria-haspopup="listbox"] .biGQs._P::text').get('')
-        logger.debug(f"Botón de idioma detectado: {language_button}")  # Log para ver el botón de idioma
+        
         if "English" in language_button:
-            # Intentar extraer el número de reseñas disponibles
-            available_reviews = extract_available_reviews(selector, response.text)
-            logger.debug(f"Número de reseñas extraídas: {available_reviews}")  # Log adicional para depuración
-
-            # Si no se pudo extraer el número de reseñas, usar el valor de reviews_count del JSON
-            if available_reviews == 0:
-                available_reviews = reviews_count
-                logger.info(f"Usando reviews_count del JSON: {available_reviews} reseñas")
-
-            # Calcular número de páginas (10 reseñas por página)
-            total_pages = (available_reviews + 9) // 10 if available_reviews > 0 else 0
-
-            return {
-                "reviews_count": available_reviews,
-                "total_pages": total_pages
-            }
+            # Extraer solo reseñas en inglés disponibles
+            english_reviews = extract_available_reviews(selector, response.text)
+            english_pages = (english_reviews + 9) // 10 if english_reviews > 0 else 0
             
-        logger.info(f"Atracción en 'All languages'. Ignorando: {url}")
-        return {"reviews_count": 0, "total_pages": 0}
+            return {
+                "total_reviews": reviews_count,
+                "english_reviews": english_reviews,
+                "english_pages": english_pages 
+            }
+        
+        return {
+            "total_reviews": reviews_count,
+            "english_reviews": 0,
+            "english_pages": 0
+        }
 
     except Exception as e:
-        logger.error(f"Error al obtener métricas para {url}: {e}")
-        return {"reviews_count": 0, "total_pages": 0}
+        logger.error(f"Error al obtener métricas: {e}")
+        return {
+            "total_reviews": reviews_count,
+            "english_reviews": 0,
+            "english_pages": 0
+        }
 
 
 def extract_available_reviews(selector: Selector, html_text: str) -> int:
@@ -82,10 +83,9 @@ async def scrape_attraction_with_metrics(client: httpx.AsyncClient, url: str, ba
     """
     place_name = basic_metadata.get("place_name", "Desconocido")
 
-
     try:
         # Obtener métricas actualizadas
-        updated_metrics = await count_attraction_metrics(client, url)
+        updated_metrics = await count_attraction_metrics(client, url, basic_metadata.get("reviews_count", 0))
         basic_metadata.update(updated_metrics)
 
         # Si no hay reseñas, retornar datos básicos
@@ -93,7 +93,8 @@ async def scrape_attraction_with_metrics(client: httpx.AsyncClient, url: str, ba
             return {
                 **basic_metadata,
                 "reviews": [],
-                "url": url
+                "url": url,
+                "scrape_status": "completed_no_reviews"
             }
 
         # Calcular páginas a procesar
@@ -108,7 +109,8 @@ async def scrape_attraction_with_metrics(client: httpx.AsyncClient, url: str, ba
         return {
             **basic_metadata,
             "url": url,
-            "reviews": reviews_data
+            "reviews": reviews_data,
+            "scrape_status": "completed" if len(reviews_data) > 0 else "completed_partial"
         }
 
     except Exception as e:
@@ -116,13 +118,15 @@ async def scrape_attraction_with_metrics(client: httpx.AsyncClient, url: str, ba
         return {
             **basic_metadata,
             "reviews": [],
-            "url": url
+            "url": url,
+            "scrape_status": "failed"
         }
 
 
 async def extract_reviews_from_all_pages(client: httpx.AsyncClient, base_url: str, metadata: Dict, max_pages: int) -> List[Dict]:
     """
     Extrae reseñas de todas las páginas de una atracción.
+    Si falla 3 veces en una página, abandona completamente la atracción.
     """
     reviews_data = []
     place_name = metadata.get("place_name", "Desconocido")
@@ -132,23 +136,52 @@ async def extract_reviews_from_all_pages(client: httpx.AsyncClient, base_url: st
         page_url = get_page_url(base_url, page)
         logger.info(f"Procesando {place_name}: Página {page}/{max_pages}")
 
-        try:
-            page_response = await client.get(page_url)
-            page_data = await parse_things_to_do_page(page_response, client, metadata)
+        # Configuración de reintentos
+        max_retries = 3
+        retry_delays = [300, 600, 900]  # segundos para cada reintento
+        current_retry = 0
+        page_success = False
 
-            if page_data["reviews"]:
-                reviews_data.extend(page_data["reviews"])
-                logger.info(f"{place_name}: Añadidas {len(page_data['reviews'])} reseñas de la página {page}")
-            else:
-                logger.warning(f"{place_name}: No se encontraron reseñas en la página {page}")
-                break  # Detener el proceso si no hay reseñas en la página
+        while current_retry < max_retries and not page_success:
+            try:
+                page_response = await client.get(page_url)
+                page_data = await parse_things_to_do_page(page_response, client, metadata)
 
-            # Pausas inteligentes para evitar bloqueos
-            await smart_sleep(page)
+                if page_data["reviews"]:
+                    reviews_data.extend(page_data["reviews"])
+                    logger.info(f"{place_name}: Añadidas {len(page_data['reviews'])} reseñas de la página {page}")
+                    page_success = True
+                else:
+                    current_retry += 1
+                    if current_retry < max_retries:
+                        delay = retry_delays[current_retry - 1]
+                        logger.warning(
+                            f"{place_name}: No se encontraron reseñas en la página {page} "
+                            f"(Intento {current_retry}/{max_retries}). "
+                            f"Reintentando en {delay} segundos..."
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(
+                            f"{place_name}: No se encontraron reseñas en la página {page} "
+                            f"después de {max_retries} intentos. Abandonando atracción..."
+                        )
+                        return reviews_data 
 
-        except Exception as e:
-            logger.error(f"Error procesando página {page} de {place_name}: {e}")
-            await asyncio.sleep(5)
+                # Pausas inteligentes para evitar bloqueos
+                if page_success:
+                    await smart_sleep(page)
+
+            except Exception as e:
+                logger.error(f"Error procesando página {page} de {place_name}: {e}")
+                current_retry += 1
+                if current_retry < max_retries:
+                    delay = retry_delays[current_retry - 1]
+                    logger.warning(f"Reintentando en {delay} segundos...")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"Fallo definitivo al procesar página {page} después de {max_retries} intentos. Abandonando atracción...")
+                    return reviews_data 
 
     return reviews_data
 
@@ -170,7 +203,9 @@ async def smart_sleep(page: int):
     """
     Realiza pausas inteligentes para evitar ser bloqueado.
     """
-    if page % 50 == 0:
+    if page % 100 == 0:
+        pause_time = 60
+    elif page % 50 == 0:
         pause_time = 45
     elif page % 10 == 0:
         pause_time = 15
@@ -198,7 +233,7 @@ async def parse_things_to_do_page(response: Response, client: AsyncClient, metad
         **metadata,
         "url": url,
         "reviews": reviews,
-        "is_last_page": len(reviews) < 10  # Asumimos que es la última página si hay menos de 10 reseñas
+        "is_last_page": len(reviews) < 10  
     }
 
 
@@ -213,8 +248,6 @@ def extract_reviews_from_page(selector: Selector, current_url: str) -> List[Dict
         logger.warning(f"No se encontraron reseñas en la página: {current_url}")
         return []
 
-    logger.info(f"Se encontraron {len(review_cards)} tarjetas de reseñas en la página: {current_url}")
-
     for card in review_cards:
         try:
             review = extract_review_from_card(card)
@@ -224,59 +257,80 @@ def extract_reviews_from_page(selector: Selector, current_url: str) -> List[Dict
                 logger.warning(f"Reseña descartada por falta de información: {review}")
         except Exception as e:
             logger.warning(f"Error grave al extraer reseña: {e}")
-            continue  # Continuar con la siguiente reseña incluso si falla una
+            continue
 
     logger.info(f"Total de reseñas extraídas en la página: {len(reviews)}")
     return reviews
 
 
 def extract_review_from_card(card: Selector) -> Dict:
-    """
-    Extrae los detalles de una reseña de una tarjeta con manejo robusto de errores.
-    """
-    # Inicializar todas las variables con valores por defecto
-    contributions_text = "0"
-    
+    """Versión mejorada para manejar todas las variaciones de reseñas"""
     try:
-        # Extraer nombre de usuario
-        name = card.xpath(".//span[contains(@class, 'fiohW')]/a/text()").get() or "Sin nombre"
+        # 1. Extraer nombre de usuario
+        name = card.xpath(".//a[contains(@class, 'BMQDV')]/span/text()").get()
+        if not name:
+            name = card.xpath(".//span[contains(@class, 'fiohW')]//text()").get()
+        name = name.strip() if name else "Sin nombre"
 
-        # Extraer calificación
-        rating_text = card.xpath(".//svg[contains(@class, 'UctUV')]//title/text()").get() or "0.0"
+        # 2. Extraer rating
+        rating_text = card.xpath(".//*[local-name()='svg' and contains(@class, 'UctUV')]//title/text()").get("0.0")
         rating = float(rating_text.split("of")[0].strip()) if "of" in rating_text else 0.0
 
-        # Extraer título y texto (estos son obligatorios)
-        title = card.xpath(".//div[contains(@class, 'biGQs')]//span[@class='yCeTE']/text()").get() or "Sin título"
-        review_text = card.xpath(".//span[@class='JguWG']//span[@class='yCeTE']/text()").get() or "Sin texto"
+        # 3. Extraer título
+        title = card.xpath(".//div[contains(@class, 'ncFvv')]//span[contains(@class, 'yCeTE')]/text()").get()
+        if not title:
+            title = card.xpath(".//a[contains(@class, 'BMQDV')]//span[contains(@class, 'yCeTE')]/text()").get()
+        title = title.strip() if title else "Sin título"
 
-        # Extraer ubicación y contribuciones (opcionales)
-        user_info_block = card.xpath(".//div[@class='QIHsu Zb']")
-        info_spans = user_info_block.xpath(".//div[@class='vYLts']//div[@class='biGQs _P pZUbB osNWb']/span/text()").getall()
-        
+        # 4. Extraer texto de la reseña
+        review_text = " ".join([
+            text.strip() for text in 
+            card.xpath(".//div[contains(@class, 'KxBGd')]//span[contains(@class, 'yCeTE')]//text()").getall()
+            if text.strip()
+        ])
+        if not review_text:
+            review_text = " ".join([
+                text.strip() for text in 
+                card.xpath(".//span[contains(@class, 'JguWG')]//span[contains(@class, 'yCeTE')]//text()").getall()
+                if text.strip()
+            ])
+        review_text = review_text if review_text else "Sin texto"
+
+        # 5. Extraer ubicación y contribuciones
         location = "Sin ubicación"
         contributions = 0
+        contrib_text = "0"  
+        info_div = card.xpath(".//div[contains(@class, 'vYLts')]")
         
-        if len(info_spans) >= 2:
-            location = info_spans[0].strip() if info_spans[0] else location
-            contributions_text = info_spans[1].strip() if info_spans[1] else "0"
-        elif len(info_spans) == 1:
-            contributions_text = info_spans[0].strip() if info_spans[0] else "0"
+        if info_div:
+            spans = info_div.xpath(".//span/text()").getall()
+            if len(spans) >= 2:
+                location = spans[0].strip()
+                contrib_text = spans[1].replace("contributions", "").replace("contribuciones", "").strip()
+            elif spans:
+                contrib_text = spans[0].replace("contributions", "").replace("contribuciones", "").strip()
+            
+            # Limpieza de contribuciones
+            contrib_text = contrib_text.replace(",", "").replace(".", "").strip()
+            if contrib_text:  
+                contributions = int(contrib_text) if contrib_text.isdigit() else 0
 
-        # Limpieza robusta de contribuciones
-        contributions_text = contributions_text.lower().replace("contributions", "").replace("contribuciones", "").strip()
-        contributions_text = contributions_text.replace(",", "").replace(".", "")
-        contributions = int(contributions_text) if contributions_text.isdigit() else 0
-
-        # Extraer fechas (opcionales)
-        visit_info = card.xpath(".//div[@class='RpeCd']/text()").get() or "Sin fecha"
+        # 6. Extraer fechas de visita
+        visit_info = card.xpath(".//div[contains(@class, 'RpeCd')]/text()").get("")
         visit_date = "Sin fecha"
         companion_type = "Sin información"
+        
         if "•" in visit_info:
             parts = [p.strip() for p in visit_info.split("•")]
             visit_date = parts[0] if parts else visit_date
             companion_type = parts[1] if len(parts) > 1 else companion_type
+        elif visit_info.strip():
+            visit_date = visit_info.strip()
 
-        written_date = card.xpath(".//div[contains(@class, 'ncFvv')]/text()").get() or "Sin fecha"
+        # 7. Fecha de escritura
+        written_date = card.xpath(".//div[contains(@class, 'TreSq')]//div[contains(@class, 'ncFvv')]/text()").get("")
+        if not written_date:
+            written_date = card.xpath(".//div[contains(@class, 'ncFvv') and contains(@class, 'osNWb')]/text()").get("")
         if written_date.startswith("Written "):
             written_date = written_date[8:].strip()
 
@@ -294,12 +348,11 @@ def extract_review_from_card(card: Selector) -> Dict:
 
     except Exception as e:
         logger.error(f"Error al procesar tarjeta de reseña: {e}")
-        # Devuelve una reseña con valores por defecto pero marcada como error
         return {
             "username": "Error en extracción",
             "rating": 0.0,
-            "title": title if 'title' in locals() else "Error en extracción",
-            "review_text": review_text if 'review_text' in locals() else "Error en extracción",
+            "title": "Error en extracción",
+            "review_text": "Error en extracción",
             "location": "Error en extracción",
             "contributions": 0,
             "visit_date": "Error en extracción",
