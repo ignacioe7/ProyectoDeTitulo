@@ -1,0 +1,6 @@
+{
+    "data_dir": "data",
+    "output_dir": "output",
+    "max_retries": 3,
+    "request_timeout": 30
+}
