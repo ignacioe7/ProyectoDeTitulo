@@ -33,6 +33,12 @@ python -m src.main
 python src/main.py
 ```
 
+### 5. Para ejecutar la interfaz gráfica
+```bash
+# Si estas en la raíz del proyecto
+streamlit run src/ui/streamlit_app.py
+```
+
 ## Nota
 Este código es con fines educativos y de uso para investigación sobre el turista.
 TripAdvisor prohibe la extracción de información de manera automatizada.
