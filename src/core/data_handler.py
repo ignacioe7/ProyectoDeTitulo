@@ -78,7 +78,6 @@ class DataHandler:
         self.regions_data = {}
         self.regions = []
 
-
   def load_regions(self) -> List[Dict]:
     if not self.regions_data:
         log.warning("load_regions llamado pero self.regions_data está vacío. Intentando recargar.")
@@ -129,12 +128,27 @@ class DataHandler:
   async def export_reviews(self, data: Dict, format: str = "excel") -> Path:
     """Exporta reseñas, puede ser a excel o json"""
     if not isinstance(data, dict) or 'region' not in data:
+      log.error("Data debe ser un diccionario con clave 'region'") 
       raise ValueError("Data debe ser un diccionario con clave 'region'")
+    
+    original_region_name = data['region']
+    log.debug(f"Exportando reseñas para la región original: '{original_region_name}', formato: '{format}'")
+
+    sanitized_region_name_for_file = self._sanitize_region_name(original_region_name)
+    log.info(f"Nombre de región sanitizado para el archivo de exportación: '{sanitized_region_name_for_file}'")
+
+    export_data_package = {
+        "region_original": original_region_name,
+        "region_for_filename": sanitized_region_name_for_file, 
+        "attractions_data": data.get("attractions_data", data.get("attractions", []))
+    }
 
     if format == "excel":
-      return await self.exporter.save_to_excel(data)
+      return await self.exporter.save_to_excel(export_data_package)
     elif format == "json":
-      return await self.exporter.save_to_json(data)
+      return await self.exporter.save_to_json(export_data_package)
+    
+    log.error(f"Formato no soportado para exportación: {format}")
     raise ValueError(f"Formato no soportado: {format}")
 
   # ---- Análisis de Sentimientos ----
@@ -344,36 +358,53 @@ class DataHandler:
   def _sanitize_region_name(self, region_name: str) -> str:
     """Normaliza el nombre de la región para nombres de archivo usando unidecode."""
     if not isinstance(region_name, str):
+        log.warning(f"Se recibió un tipo no string para sanitizar: {type(region_name)}. Devolviendo string vacío.")
         return ""
+    
+    log.debug(f"Sanitizando nombre de región original: '{region_name}'")
 
+    # Eliminar prefijos como "XV-", "I-", etc.
     name = re.sub(r'^[XIV]+-?\s*', '', region_name, flags=re.IGNORECASE).strip()
+    log.debug(f"Después de quitar prefijo numérico: '{name}'")
 
     try:
-        name = unidecode(name)
+        name_unidecoded = unidecode(name)
+        log.debug(f"Después de unidecode: '{name_unidecoded}'")
     except Exception as e:
-        name = (name.lower().replace('á', 'a').replace('é', 'e').replace('í', 'i')
+        log.warning(f"Falló unidecode para '{name}', usando fallback manual. Error: {e}")
+        name_unidecoded = (name.lower().replace('á', 'a').replace('é', 'e').replace('í', 'i')
                 .replace('ó', 'o').replace('ú', 'u').replace('ñ', 'n'))
-        name = re.sub(r'[^\w\s-]', '', name)
+        name_unidecoded = re.sub(r'[^\w\s-]', '', name_unidecoded) # Quitar caracteres no deseados después del fallback
+        log.debug(f"Después de fallback de unidecode: '{name_unidecoded}'")
 
-    name = name.lower()
-    log.debug(f"Después de convertir a minúsculas: '{name}'")
+    name_lower = name_unidecoded.lower()
+    log.debug(f"Después de convertir a minúsculas: '{name_lower}'")
 
-    name = re.sub(r'[^\w]+', '_', name, flags=re.ASCII)
+    # Reemplazar cualquier cosa que no sea alfanumérica por guion bajo
+    name_alphanum = re.sub(r'[^\w]+', '_', name_lower, flags=re.ASCII)
+    log.debug(f"Después de reemplazar no alfanuméricos por '_': '{name_alphanum}'")
 
-    name = re.sub(r'_+', '_', name).strip('_')
-
-    return name
+    # Reemplazar múltiples guiones bajos por uno solo y quitar los de los extremos
+    name_final = re.sub(r'_+', '_', name_alphanum).strip('_')
+    log.info(f"Nombre de región sanitizado final: '{region_name}' -> '{name_final}'")
+    return name_final
 
   def get_attraction_filepath(self, region_name: str) -> Path:
     """Genera la ruta esperada para archivos JSON de atracciones"""
+    log.debug(f"Obteniendo ruta para archivo de atracciones. Región original: '{region_name}'")
     sanitized = self._sanitize_region_name(region_name)
-    return Path(self.paths.ATTRACTIONS_DIR) / f"{sanitized}_attractions.json"
+    filepath = Path(self.paths.ATTRACTIONS_DIR) / f"{sanitized}_attractions.json"
+    log.info(f"Ruta generada para archivo JSON de atracciones: '{filepath}'")
+    return filepath
 
   def get_reviews_filepath(self, region_name: str, format: str = "excel") -> Path:
     """Genera la ruta esperada para archivos de reseñas (Excel o JSON)"""
+    log.debug(f"Obteniendo ruta para archivo de reseñas. Región original: '{region_name}', Formato: '{format}'")
     sanitized_name = self._sanitize_region_name(region_name)
     ext = "xlsx" if format == "excel" else "json"
-    return Path(self.paths.OUTPUT_DIR) / f"{sanitized_name}_reviews.{ext}"
+    filepath = Path(self.paths.OUTPUT_DIR) / f"{sanitized_name}_reviews.{ext}"
+    log.info(f"Ruta generada para archivo de reseñas ({format}): '{filepath}'")
+    return filepath
 
   def _find_matching_file(self, region_name: str) -> Optional[Path]:
     """Busca el archivo Excel de reseñas que coincida con el nombre de la región"""
