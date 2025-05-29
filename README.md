@@ -1,14 +1,34 @@
-# Guía de Instalación y Ejecución
+# 🚀 Análisis de Sentimientos en Reseñas Turísticas
 
-## Paso a paso para ejecutar el código
+Un proyecto de investigación académica para analizar sentimientos en reseñas de atracciones turísticas usando machine learning y NLP.
+
+## 📋 Características
+
+- **Scraping inteligente** de datos de atracciones turísticas
+- **Análisis de sentimientos** usando DistilBERT
+- **Interfaz web moderna** con Streamlit
+- **Exportación de datos** a Excel y JSON
+- **Visualizaciones interactivas** de resultados
+- **Procesamiento concurrente** para mejor rendimiento
+
+## 🛠️ Tecnologías
+
+- **Python 3.8+**
+- **Streamlit** - Interfaz web
+- **Transformers** - Análisis de sentimientos
+- **PyTorch** - Machine Learning
+- **Pandas** - Manipulación de datos
+- **Plotly** - Visualizaciones
+
+## 📦 Instalación
 
 ### 1. Clonar el repositorio
 ```bash
-git ................
-cd ............
+git clone https://github.com/user/nombre_proyecto.git
+cd proyecto_cientifico
 ```
 
-### 2. Crear un entorno virtual (opcional pero recomendado)
+### 2. Crear entorno virtual
 ```bash
 # Windows
 python -m venv venv
@@ -24,32 +44,98 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Ejecutar la aplicación
-```bash
-# Si estás en la raíz del proyecto
-python -m src.main
+## 🚀 Uso
 
-# O alternativamente
-python src/main.py
-```
-
-### 5. Para ejecutar la interfaz gráfica
+### Ejecutar la aplicación
 ```bash
-# Si estas en la raíz del proyecto
 streamlit run src/ui/streamlit_app.py
 ```
 
-## Nota
-Este código es con fines educativos y de uso para investigación sobre el turista.
-TripAdvisor prohibe la extracción de información de manera automatizada.
-Además, no fomentamos la utilización de el scraping de manera comercial y poco ética.
+### Funcionalidades principales
+
+1. **Configurar regiones** - Define las áreas geográficas a analizar
+2. **Extraer atracciones** - Obtiene listado de lugares turísticos
+3. **Scrapear reseñas** - Recolecta comentarios de usuarios
+4. **Analizar sentimientos** - Clasifica opiniones como positivas/negativas
+5. **Visualizar resultados** - Genera gráficos y estadísticas
+6. **Exportar datos** - Guarda resultados en diferentes formatos
+
+## 📁 Estructura del proyecto
+
+```
+proyecto_cientifico/
+├── src/
+│   ├── core/           # Lógica principal
+│   │   ├── scraper.py  # Extracción de datos
+│   │   ├── analyzer.py # Análisis de sentimientos
+│   │   └── data_handler.py # Manejo de datos
+│   ├── ui/             # Interfaz de usuario
+│   │   └── streamlit_app.py
+│   └── utils/          # Utilidades y helpers
+├── data/               # Datos generados
+├── logs/               # Archivos de log
+└── requirements.txt    # Dependencias
+```
+
+## 🎯 Casos de uso
+
+- **Investigación académica** sobre turismo y opinión pública
+- **Análisis de mercado** para destinos turísticos
+- **Estudios de satisfacción** de visitantes
+- **Benchmarking** de atracciones similares
+
+## ⚠️ Consideraciones legales y éticas
+
+**IMPORTANTE**: Este proyecto es únicamente para fines educativos e investigación académica.
+
+### 📜 Responsabilidades del usuario
+
 Los usuarios son completamente responsables de:
 
-1. Revisar y cumplir los Términos de Servicio de TripAdvisor
-2. Utilizar el código de manera ética y legal
-3. Limitar la frecuencia de solicitudes para no sobrecargar los servidores
+1. **Revisar y cumplir** los Términos de Servicio de TripAdvisor
+2. **Usar el código de manera ética** y dentro del marco legal
+3. **Limitar la frecuencia** de solicitudes para no sobrecargar servidores
+4. **Respetar robots.txt** y políticas de scraping del sitio web
+5. **No usar con fines comerciales** sin autorización explícita
 
+### 🚫 Limitaciones
 
-Los autores no se hacen responsables del uso indebido de este código ni de las posibles consecuencias legales derivadas.
+- TripAdvisor **prohíbe explícitamente** la extracción automatizada de datos
+- Este código **NO debe usarse** para fines comerciales no autorizados
+- Los autores **NO se responsabilizan** del uso indebido o consecuencias legales
+- El software se proporciona **"tal cual"** sin garantías de ningún tipo
 
-Este software se proporciona "tal cual", sin garantía de ningún tipo.
+### ✅ Uso recomendado
+
+- **Solo para investigación académica** con dataset pequeño
+- **Implementar delays** apropiados entre solicitudes
+- **Considerar APIs oficiales** cuando estén disponibles
+- **Citar apropiadamente** el uso de datos en publicaciones
+
+## 🤝 Contribuir
+
+Las contribuciones son bienvenidas para mejorar el proyecto educativo:
+
+1. Fork el repositorio
+2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request
+
+## 📝 Licencia
+
+Este proyecto está bajo licencia MIT para uso educativo. Ver `LICENSE` para más detalles.
+
+## 👥 Autores
+
+- **Tu Nombre** - *Trabajo inicial* - [tu-usuario](https://github.com/tu-usuario)
+
+## 🙏 Agradecimientos
+
+- Comunidad de Hugging Face por los modelos de NLP
+- Streamlit por la plataforma de desarrollo
+- Contribuidores de las librerías open source utilizadas
+
+---
+
+**⚡ Nota**: Este README está escrito con fines educativos. Siempre verifica la legalidad del web scraping en tu jurisdicción y respeta los términos de servicio de los sitios web.

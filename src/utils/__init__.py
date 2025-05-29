@@ -1,6 +1,7 @@
 from .constants import BASE_URL, HEADERS, PathConfig, get_headers
 from .exporters import DataExporter
 from .logger import setup_logging
+from .networking import smart_sleep
 
 __all__ = [
 	'BASE_URL',
@@ -8,5 +9,6 @@ __all__ = [
 	'PathConfig',
 	'get_headers',
 	'DataExporter',
-	'setup_logging'
+	'setup_logging',
+  'smart_sleep'
 ]

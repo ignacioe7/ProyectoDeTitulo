@@ -1,78 +1,230 @@
-# filepath: c:\Users\doria\Documents\GitHub\proyecto_cientifico\src\ui\streamlit_app.py
 import sys
 import os
 import streamlit as st
 
-
-# Añade el directorio raíz al path para importar módulos de src
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-from src.utils.logger import setup_logging
-setup_logging()
+from src.utils import setup_logging  # config del logger
+setup_logging()  # inicializar logging
 
-from streamlit_option_menu import option_menu
-from src.ui.menu import inicio, scraping_atracciones, scraping_resenas, analisis_sentimientos, resultados
+from streamlit_option_menu import option_menu  # menu de navegación
+from src.ui.menu import analyzer, attractions, home, results, reviews  # módulos de las páginas
 from loguru import logger as log 
-from src.core.data_handler import DataHandler
+from src.core.data_handler import DataHandler  # gestor de datos principal
 
-@st.cache_resource
+# config de página
+st.set_page_config(
+  page_title="Análisis de Sentimientos TripAdvisor",
+  page_icon="📊",
+  layout="wide",
+  initial_sidebar_state="expanded"
+)
+
+@st.cache_resource  # cachear para tener una única instancia
 def get_data_handler():
-    log.info("Intentando cargar/recuperar instancia de DataHandler...")
-    try:
-        handler = DataHandler()
-        log.success("Instancia de DataHandler cargada/recuperada.")
-        return handler
-    except Exception as e:
-        log.critical(f"No se pudo inicializar DataHandler: {e}", exc_info=True)
-        st.error(f"Error crítico al inicializar DataHandler: {e}. La aplicación puede no funcionar correctamente.")
-        return None
+  """Carga instancia única de DataHandler"""
+  try:
+    handler = DataHandler()
+    log.info("DataHandler cargado")
+    return handler
+  except Exception as e:
+    log.error(f"Fallo DataHandler: {e}")
+    st.error(f"Error crítico DataHandler: {e}")
+    return None
 
-log.info("Iniciando aplicación Streamlit...")
+def get_active_process_info():
+  """Info sobre procesos activos"""
+  scraping_active = st.session_state.get('scraping_active', False)
+  attractions_scraping_active = st.session_state.get('attractions_scraping_active', False)
+  analysis_active = st.session_state.get('analysis_active', False)
+  
+  if scraping_active:
+    return "scraping_reviews", "Scraping de Reseñas", 2
+  elif attractions_scraping_active:
+    return "scraping_attractions", "Scraping de Atracciones", 1
+  elif analysis_active:
+    return "analysis", "Análisis de Sentimientos", 3
+  else:
+    return None, None, 0
 
-# Obtiene la instancia única de DataHandler (o None si falló)
+def inject_blocking_css():
+  """Inyecta CSS que bloquea clicks del menú"""
+  st.markdown("""
+  <style>
+  /* Bloquear todos los elementos del menú excepto el activo */
+  .blocked-menu .nav-link:not(.active) {
+    pointer-events: none !important;
+    opacity: 0.8 !important;
+    cursor: not-allowed !important;
+    background-color: #dc2d22 !important;
+    color: #999 !important;
+  }
+  
+  /* Mantener el elemento activo normal */
+  .blocked-menu .nav-link.active {
+    pointer-events: auto !important;
+    opacity: 1 !important;
+    cursor: pointer !important;
+  }
+  
+  /* Overlay invisible para capturar clicks */
+  .blocked-menu::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    pointer-events: none;
+  }
+  
+  /* Bloquear interacción con elementos específicos */
+  .blocked-menu .nav-link:not(.active) * {
+    pointer-events: none !important;
+  }
+  </style>
+  """, unsafe_allow_html=True)
+
+def show_anti_bot_warning():
+  """Muestra advertencia sobre sistemas anti-bot"""
+  st.sidebar.markdown("---")
+  st.sidebar.warning(
+    "⚠️ **Importante:** Si el scraping se completa muy rápido "
+    "(menos de 30 segundos), es posible que TripAdvisor haya detectado "
+    "actividad automatizada y esté bloqueando las peticiones."
+  )
+  st.sidebar.info(
+    "💡 **Recomendación:** Usa configuraciones de concurrencia bajas "
+    "(1-2) y evita hacer scraping frecuente en períodos cortos."
+  )
+
+# Obtener instancia de DataHandler
 data_handler = get_data_handler()
 
-# Mensaje de advertencia si el analizador dentro del handler no cargó
+# Verificar si DataHandler se cargó correctamente
 if data_handler is None:
-     st.sidebar.error("❌ Error crítico: DataHandler no disponible.")
-     st.stop()
+  st.sidebar.error("Error: DataHandler no disponible")
+  st.stop()
 
+# Inicializar estados si no existen
+if 'scraping_active' not in st.session_state:
+  st.session_state.scraping_active = False
+if 'attractions_scraping_active' not in st.session_state:
+  st.session_state.attractions_scraping_active = False
+if 'analysis_active' not in st.session_state:
+  st.session_state.analysis_active = False
 
-st.title("Proyecto de Scraping de TripAdvisor")
+# Obtener info del proceso activo
+process_type, process_name, active_index = get_active_process_info()
+any_process_active = process_type is not None
 
-# Menú principal
+# Inyectar CSS de bloqueo
+inject_blocking_css()
+
+# Menú principal en la barra lateral
 with st.sidebar:
-    selected = option_menu(
-        menu_title="Menú",
-        options=["Inicio", "Scraping de Atracciones", "Scraping de Reseñas", "Análisis de Sentimientos", "Resultados"],
-        icons=["house", "search", "list-task", "bar-chart", "bar-chart"],
-        menu_icon="cast",
-        default_index=0,
-        orientation="vertical",
-    )
+  # Mostrar estado si hay proceso activo
+  if any_process_active:
+    st.error(f"**{process_name.upper()} ACTIVO**")
+    st.warning("Navegación bloqueada")
+    st.markdown("---")
+  
+  # Aplicar clase de bloqueo condicionalmente
+  menu_class = "blocked-menu" if any_process_active else ""
+  
+  if any_process_active:
+    st.markdown(f'<div class="{menu_class}">', unsafe_allow_html=True)
+  
+  # Menú con key dinámica para forzar re-render
+  menu_key = f"menu_{process_type}_{active_index}" if any_process_active else "menu_normal"
+  
+  selected = option_menu(
+    menu_title="Menú Principal",
+    options=[
+      "Inicio", 
+      "Scraping de Atracciones", 
+      "Scraping de Reseñas", 
+      "Análisis de Sentimientos", 
+      "Resultados y Visualización"
+    ],
+    icons=["house", "geo-alt-fill", "card-list", "graph-up-arrow", "clipboard-data"],
+    menu_icon="list-ul",
+    default_index=active_index if any_process_active else 0,
+    orientation="vertical",
+    key=menu_key
+  )
+  
+  if any_process_active:
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.info("Solo la página activa es accesible")
+  
+  # Mostrar advertencia anti-bot para páginas de scraping
+  if selected in ["Scraping de Atracciones", "Scraping de Reseñas"]:
+    show_anti_bot_warning()
 
-# Renderizar la opción seleccionada
+# Forzar selección si hay proceso activo
+if any_process_active:
+  # Mapeo de índices a páginas
+  index_to_page = {
+    0: "Inicio",
+    1: "Scraping de Atracciones", 
+    2: "Scraping de Reseñas",
+    3: "Análisis de Sentimientos",
+    4: "Resultados y Visualización"
+  }
+  
+  # Obtener página activa permitida
+  allowed_page = index_to_page[active_index]
+  
+  # Si el usuario logra cambiar forzar regreso
+  if selected != allowed_page:
+    st.error(f"**Acceso denegado durante {process_name.lower()}**")
+    selected = allowed_page
+
+# Renderizar la página seleccionada
 if selected == "Inicio":
-    inicio.render()
-elif selected == "Scraping de Atracciones":
-    if data_handler:
-         scraping_atracciones.render(data_handler)
-    else:
-         st.error("DataHandler no disponible para Scraping de Atracciones.")
-elif selected == "Scraping de Reseñas":
-    if data_handler:
-         scraping_resenas.render(data_handler)
-    else:
-         st.error("DataHandler no disponible para Scraping de Reseñas.")
-elif selected == "Análisis de Sentimientos":
-    if data_handler:
-         analisis_sentimientos.render(data_handler)
-    else:
-         st.error("DataHandler no disponible para Análisis de Sentimientos.")
-elif selected == "Resultados":
-     if data_handler:
-         resultados.render(data_handler)
-     else:
-         st.error("DataHandler no disponible para Resultados.")
+  if any_process_active:
+    st.error(f"**Inicio no disponible durante {process_name.lower()}**")
+    st.info("Detén el proceso activo para acceder")
+  else:
+    home.render()
 
-log.debug(f"Opción seleccionada: {selected}") 
+elif selected == "Scraping de Atracciones":
+  if any_process_active and process_type != "scraping_attractions":
+    st.error(f"**Scraping de Atracciones no disponible durante {process_name.lower()}**")
+    st.info("Detén el proceso activo para acceder")
+  elif data_handler:
+    attractions.render(data_handler)
+  else:
+    st.error("DataHandler no disponible")
+
+elif selected == "Scraping de Reseñas":
+  if any_process_active and process_type != "scraping_reviews":
+    st.error(f"**Scraping de Reseñas no disponible durante {process_name.lower()}**")
+    st.info("Detén el proceso activo para acceder")
+  elif data_handler:
+    reviews.render(data_handler) 
+  else:
+    st.error("DataHandler no disponible")
+
+elif selected == "Análisis de Sentimientos":
+  if any_process_active and process_type != "analysis":
+    st.error(f"**Análisis no disponible durante {process_name.lower()}**")
+    st.info("Detén el proceso activo para acceder")
+  elif data_handler:
+    analyzer.render(data_handler)
+  else:
+    st.error("DataHandler no disponible")
+
+elif selected == "Resultados y Visualización":
+  if any_process_active:
+    st.error(f"**Resultados no disponibles durante {process_name.lower()}**")
+    st.info("Detén el proceso activo para acceder")
+  elif data_handler:
+    results.render(data_handler)
+  else:
+    st.error("DataHandler no disponible")
+
+# Log mínimo
+log.debug(f"Página: {selected} | Proceso: {process_name or 'ninguno'}")

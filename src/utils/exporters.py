@@ -1,137 +1,111 @@
 import json
-import re
-import pandas as pd
-from datetime import datetime
-from pathlib import Path
 from typing import Dict, Optional
+from io import BytesIO
+import pandas as pd
 from loguru import logger as log
 
-from .constants import PathConfig
-
 class DataExporter:
-  """
-  Clase encargada de exportar los datos recolectados
-  a formatos como JSON o Excel.
-  """
+  """exporta datos a excel y json"""
 
   def __init__(self):
-    self.paths = PathConfig()
-    self._ensure_dirs()
+    pass
 
-  def _ensure_dirs(self):
-    """Asegura la existencia de los directorios de salida"""
-    Path(self.paths.ATTRACTIONS_DIR).mkdir(parents=True, exist_ok=True)
-    Path(self.paths.OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+  def export_to_excel_bytes(self, data_package: Dict) -> Optional[bytes]:
+    """genera excel en memoria y devuelve bytes"""
+    if not data_package.get("regions"):
+      return None
 
-  async def save_to_json(self, data: Dict, filename: str = None) -> Path:
-    """Guarda datos en un archivo JSON"""
-    # Timestamp para nombre de archivo único si no se provee
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = filename or f"attractions_{timestamp}.json"
-    filepath = Path(self.paths.ATTRACTIONS_DIR) / filename
+    output = BytesIO()
+    try:
+      with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # hoja resumen de atracciones
+        summary_data = []
+        for region in data_package.get("regions", []):
+          region_name = region.get("region_name", "Región Desconocida")
+          for attraction in region.get("attractions", []):
+            summary_data.append({
+              "Región": region_name,
+              "Atracción": attraction.get("attraction_name", "N/A"),
+              "Tipo": attraction.get("place_type", "N/A"),
+              "Rating": attraction.get("rating", 0),
+              "Total Reseñas": attraction.get("reviews_count", 0),
+              "Reseñas Inglés": attraction.get("english_reviews_count", 0),
+              "Reseñas Scrapeadas": len(attraction.get("reviews", [])),
+              "URL": attraction.get("url", "N/A"),
+              "Última Actualización": attraction.get("last_reviews_scrape_date", "N/A")
+            })
+        
+        if summary_data:
+          df_summary = pd.DataFrame(summary_data)
+          df_summary.to_excel(writer, sheet_name="Resumen_Atracciones", index=False)
+          
+          # ajustar ancho columnas
+          worksheet_summary = writer.sheets["Resumen_Atracciones"]
+          for idx, col in enumerate(df_summary.columns):
+            series = df_summary[col]
+            max_len = max(
+              series.astype(str).map(len).max(),
+              len(str(col))
+            ) + 3
+            worksheet_summary.set_column(idx, idx, min(max_len, 50)) # max 50 chars
+
+        # hoja detalle reseñas
+        reviews_data = []
+        for region in data_package.get("regions", []):
+          region_name = region.get("region_name", "Región Desconocida")
+          for attraction in region.get("attractions", []):
+            attraction_name = attraction.get("attraction_name", "Atracción Desconocida")
+            for review in attraction.get("reviews", []):
+              reviews_data.append({
+                "Región": region_name,
+                "Atracción": attraction_name,
+                "Usuario": review.get("username", "N/A"),
+                "Rating": review.get("rating", 0),
+                "Título": review.get("title", "N/A"),
+                "Texto": review.get("review_text", "N/A"),
+                "Fecha Escrita": review.get("written_date", "N/A"),
+                "Fecha Visita": review.get("visit_date", "N/A"),
+                "Compañía": review.get("companion_type", "N/A"),
+                "Sentimiento": review.get("sentiment", "N/A"),
+              })
+        
+        if reviews_data:
+          df_reviews = pd.DataFrame(reviews_data)
+          df_reviews.to_excel(writer, sheet_name="Detalle_Reseñas", index=False)
+          
+          # ajustar ancho columnas segun contenido
+          worksheet_reviews = writer.sheets["Detalle_Reseñas"]
+          for idx, col in enumerate(df_reviews.columns):
+            series = df_reviews[col]
+            max_len = max(
+              series.astype(str).map(len).max(),
+              len(str(col))
+            ) + 3
+            # limitar texto largo
+            if col in ["Texto", "Título"]:
+              max_len = min(max_len, 80)
+            else:
+              max_len = min(max_len, 30)
+            worksheet_reviews.set_column(idx, idx, max_len)
+            
+      processed_data = output.getvalue()
+      log.info(f"excel generado: {len(processed_data)} bytes")
+      return processed_data
+
+    except Exception as e:
+      log.error(f"error generando excel: {e}")
+      return None
+
+  async def save_to_json(self, data_package: Dict) -> Optional[bytes]:
+    """genera json en memoria y devuelve bytes"""
+    if not data_package.get("regions"):
+      return None
 
     try:
-      # Escritura del archivo JSON
-      with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-      log.success(f"Datos JSON guardados en {filepath}")
-      return filepath
+      json_content = json.dumps(data_package, indent=2, ensure_ascii=False)
+      json_bytes = json_content.encode('utf-8')
+      log.info(f"json generado: {len(json_bytes)} bytes")
+      return json_bytes
     except Exception as e:
-      log.error(f"Problema al guardar JSON: {e}")
-      raise # Re-lanza la excepción para manejo superior
-
-  async def save_to_excel(self, data_package: Dict) -> Path:
-    region_name_for_file = data_package.get("region_for_filename")
-    if not region_name_for_file:
-      log.error("Falta 'region_for_filename' en data_package para save_to_excel")
-      raise ValueError("Se requiere 'region_for_filename' para nombrar el archivo Excel")
-
-    attractions_data = data_package.get("attractions_data", [])
-    
-    # Construcción del nombre de archivo con nombre sanitizado
-    filename = Path(self.paths.OUTPUT_DIR) / f"{region_name_for_file}_reviews.xlsx"
-    log.info(f"DataExporter: Nombre de archivo Excel a generar: {filename}")
-
-    # Preparación de datos para los métodos helper
-    data_for_helpers = {'attractions': attractions_data}
-    summary_df = self._create_summary_df(data_for_helpers)
-    reviews_df = self._create_reviews_df(data_for_helpers)
-
-    try:
-      with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-        summary_df.to_excel(writer, sheet_name='Summary', index=False)
-        reviews_df.to_excel(writer, sheet_name='Reviews', index=False)
-        self._adjust_column_widths(writer, [summary_df, reviews_df]) 
-      log.success(f"Archivo Excel generado: {filename}")
-      return filename
-    except Exception as e:
-      log.error(f"Error al guardar Excel {filename}: {e}")
-      raise
-
-  def _create_summary_df(self, data: Dict) -> pd.DataFrame:
-    """Crea el DataFrame para la hoja de resumen"""
-    rows = []
-    for attraction in data['attractions']:
-      # Extracción de datos relevantes por atracción
-      rows.append({
-        'Attraction Name': attraction.get('place_name'),
-        'Type': attraction.get('place_type'),
-        'Rating': attraction.get('rating', 0.0), # Default 0.0 si no existe rating
-        'Total Reviews': attraction.get('total_reviews', 0),
-        'Total English Reviews': attraction.get('english_reviews', 0), # Reviews en inglés
-        'URL': attraction.get('url', '') # URL de la atracción
-      })
-    # Conversión de lista de dicts a DataFrame
-    return pd.DataFrame(rows)
-
-  def _create_reviews_df(self, data: Dict) -> pd.DataFrame:
-    """Crea el DataFrame para la hoja de reseñas, evitando duplicados"""
-    reviews = []
-    seen_hashes = set() # Set para control de duplicados mediante hash
-
-    for attraction in data['attractions']:
-      for review in attraction.get('reviews', []): # Itera sobre reseñas de la atracción
-        # Genera un hash para la reseña basado en campos clave
-        # Permite identificar duplicados de forma eficiente
-        review_hash = hash((
-          review.get('username', ''),
-          review.get('title', ''),
-          review.get('written_date', ''),
-          str(review.get('rating', 0)) # Rating a string para el hash
-        ))
-
-        # Si el hash no existe, se agrega la reseña
-        if review_hash not in seen_hashes:
-          seen_hashes.add(review_hash)
-          reviews.append({
-            'Attraction': attraction.get('place_name'), # Atracción asociada
-            'Username': review.get('username'), # Autor de la reseña
-            'Rating': review.get('rating'), # Calificación
-            'Location': review.get('location'), # Ubicación del autor
-            'Contributions': review.get('contributions'), # N° de contribuciones
-            'Visit Date': review.get('visit_date'), # Fecha de visita
-            'Written Date': review.get('written_date'), # Fecha de escritura
-            'Companion Type': review.get('companion_type'), # Tipo de acompañante
-            'Title': review.get('title'), # Título de la reseña
-            'Review Text': review.get('review_text'), # Texto completo
-          })
-
-    df = pd.DataFrame(reviews)
-
-    return df.drop_duplicates(
-      subset=['Username', 'Title', 'Written Date', 'Rating'],
-      keep='first'
-    )
-
-  def _adjust_column_widths(self, writer, dfs: list):
-    """Ajusta el ancho de columnas en Excel para mejor visualización"""
-    # Itera sobre cada hoja y su DataFrame asociado
-    for sheet_name, df in zip(writer.sheets.keys(), dfs):
-      worksheet = writer.sheets[sheet_name]
-      # Itera sobre cada columna del DataFrame
-      for idx, col in enumerate(df.columns):
-        # Calcula ancho: máximo entre contenido y nombre de columna, más margen
-        max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
-        # Asigna ancho a columna, con tope de 50 para evitar exceso
-        column_letter = chr(65 + idx) # Letra de columna (A, B, C...)
-        worksheet.column_dimensions[column_letter].width = min(max_len, 50)
+      log.error(f"error generando json: {e}")
+      return None

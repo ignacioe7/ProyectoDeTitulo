@@ -1,10 +1,15 @@
 from .data_handler import DataHandler
 from .scraper import AttractionScraper, ReviewScraper
-from .parsers import ReviewParser
+from .parsers import ReviewParser, ReviewParserConfig
+from .analyzer import SentimentAnalyzer
+from .metrics import ReviewMetricsCalculator
 
 __all__ = [
   'DataHandler',
   'AttractionScraper', 
   'ReviewScraper',
-  'ReviewParser'
+  'ReviewParser',
+  'ReviewParserConfig',
+  'SentimentAnalyzer',
+  'ReviewMetricsCalculator'
 ]
