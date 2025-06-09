@@ -8,7 +8,7 @@ from src.utils import setup_logging  # config del logger
 setup_logging()  # inicializar logging
 
 from streamlit_option_menu import option_menu  # menu de navegación
-from src.ui.menu import analyzer, attractions, home, results, reviews  # módulos de las páginas
+from src.ui.menu import analyzer, attractions, filters, home, results, reviews  # módulos de las páginas
 from loguru import logger as log 
 from src.core.data_handler import DataHandler  # gestor de datos principal
 
@@ -146,9 +146,10 @@ with st.sidebar:
       "Scraping de Atracciones", 
       "Scraping de Reseñas", 
       "Análisis de Sentimientos", 
-      "Resultados y Visualización"
+      "Resultados y Visualización",
+      "Filtros y descargas"
     ],
-    icons=["house", "geo-alt-fill", "card-list", "graph-up-arrow", "clipboard-data"],
+    icons=["house", "geo-alt-fill", "card-list", "graph-up-arrow", "clipboard-data", "filter"],
     menu_icon="list-ul",
     default_index=active_index if any_process_active else 0,
     orientation="vertical",
@@ -171,7 +172,8 @@ if any_process_active:
     1: "Scraping de Atracciones", 
     2: "Scraping de Reseñas",
     3: "Análisis de Sentimientos",
-    4: "Resultados y Visualización"
+    4: "Resultados y Visualización",
+    5: "Filtros y descargas"
   }
   
   # Obtener página activa permitida
@@ -223,6 +225,15 @@ elif selected == "Resultados y Visualización":
     st.info("Detén el proceso activo para acceder")
   elif data_handler:
     results.render(data_handler)
+  else:
+    st.error("DataHandler no disponible")
+  
+elif selected == "Filtros y descargas":
+  if any_process_active:
+    st.error(f"**Filtros y descargas no disponibles durante {process_name.lower()}**")
+    st.info("Detén el proceso activo para acceder")
+  elif data_handler:
+    filters.render(data_handler)
   else:
     st.error("DataHandler no disponible")
 

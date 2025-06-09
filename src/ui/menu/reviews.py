@@ -110,11 +110,11 @@ def render(data_handler):
       else:
         ui_status_placeholder.warning("Selecciona una región válida")
   
-  with col2:
+  """ with col2:
     if st.button("Detener", disabled=not scraping_active, key="stop_button"):
       st.session_state.should_stop = True
       log.info("Solicitando detención de scraping")
-      ui_status_placeholder.warning("Deteniendo scraping... Por favor espera")
+      ui_status_placeholder.warning("Deteniendo scraping... Por favor espera") """
   
   # Mostrar estado actual solo si está activo
   if scraping_active:
@@ -205,7 +205,15 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
   """Muestra tabla con regiones que tienen atracciones scrapeadas"""
   st.markdown("---")
   st.subheader("Estado de Regiones para Scraping de Reseñas")
-  
+  if st.button("Actualizar Tabla de Estado de Regiones"): # Label ligeramente modificado para claridad
+    log.info("Botón 'Actualizar Tabla de Estado de Regiones' presionado.")
+    if data_handler:
+      data_handler.reload_data()  # 1. Forzar la recarga de datos desde el archivo JSON
+      log.info("DataHandler ha recargado sus datos. Solicitando re-renderizado de la UI.")
+      st.rerun()  # 2. Re-ejecutar el script de Streamlit para reflejar los cambios
+    else:
+      log.error("DataHandler no disponible en _render_scraped_regions_table para recargar.")
+      st.warning("No se pudo actualizar la tabla: DataHandler no encontrado.")
   table_data = []
   
   for region in scraped_regions:
