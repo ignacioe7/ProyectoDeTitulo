@@ -5,9 +5,13 @@ from loguru import logger as log
 from typing import Dict, Tuple, Optional, List
 import streamlit as st
 
+# ========================================================================================================
+#                                           CARGAR ANALIZADOR
+# ========================================================================================================
+
 @st.cache_resource
 def load_analyzer(use_cpu: bool = False):
-  """Carga analizador de sentimientos"""
+  # CARGA EL ANALIZADOR DE SENTIMIENTOS CON CACHE DE STREAMLIT
   log.info("Cargando analizador")
   try:
     analyzer = SentimentAnalyzer(use_cpu=use_cpu)
@@ -19,19 +23,24 @@ def load_analyzer(use_cpu: bool = False):
     log.error(f"Error crítico cargando analizador: {e}")
     return None 
 
+# ========================================================================================================
+#                                        ANALIZADOR PRINCIPAL
+# ========================================================================================================
+
 class SentimentAnalyzer:
-  """Analizador de sentimientos multilingual"""
+  # Analizador de sentimientos multiidioma usando modelo de Hugging Face
+  # Maneja carga del modelo, análisis de texto y generación de estadísticas
   
   def __init__(self, use_cpu: bool = False):
     self.model_name = "tabularisai/multilingual-sentiment-analysis"
     self.nlp = None
 
     try:
-      # Detectar dispositivo
+      # Detecta si usar CPU o GPU según disponibilidad
       device = -1 if use_cpu or not torch.cuda.is_available() else 0
       device_name = 'CPU' if device == -1 else 'GPU'
       
-      # Crear pipeline del modelo
+      # Inicializa pipeline de transformers para clasificación de texto
       self.nlp = pipeline(
         "text-classification", 
         model=self.model_name,
@@ -44,13 +53,18 @@ class SentimentAnalyzer:
       log.error(f"Error cargando modelo: {e}")
       self.nlp = None
 
+# ========================================================================================================
+#                                           ANALIZAR TEXTO
+# ========================================================================================================
+
   def analyze_text(self, text: str) -> Tuple[str, float]:
-    """Analiza texto y devuelve sentimiento y score (0-4)"""
+    # ANALIZA UN TEXTO Y DEVUELVE SENTIMIENTO CLASIFICADO CON SCORE NUMÉRICO
     if self.nlp is None:
       log.warning("Modelo no disponible")
       return "ERROR", 2.0
 
     try:
+      # Limita texto a 512 caracteres para evitar errores del modelo
       processed_text = str(text).strip()[:512]
       
       if not processed_text:
@@ -61,6 +75,7 @@ class SentimentAnalyzer:
       label = result['label']
       confidence = float(result['score'])
       
+      # Mapea etiquetas del modelo a sentimientos consistentes
       sentiment_mapping = {
         # Formato estándar del modelo multilingual
         "LABEL_0": ("VERY_NEGATIVE", 0.0),
@@ -96,14 +111,18 @@ class SentimentAnalyzer:
       log.error(f"Error analizando texto: {e}")
       return "ERROR", 2.0
 
+# ========================================================================================================
+#                                          ANALIZAR RESEÑA
+# ========================================================================================================
+
   def analyze_review(self, title: Optional[str], text: Optional[str]) -> Tuple[str, float]:
-    """Analiza título y texto de reseña combinados"""
+    # ANALIZA TÍTULO Y TEXTO DE RESEÑA COMBINADOS PARA MEJOR PRECISIÓN
     try:
-      # Limpiar y combinar título + texto
+      # Limpia y valida ambos campos de entrada
       title_clean = str(title).strip() if title else ""
       text_clean = str(text).strip() if text else ""
 
-      # Combinar inteligentemente
+      # Combina título y texto de manera inteligente
       if title_clean and text_clean:
         combined_text = f"{title_clean}. {text_clean}"
       elif title_clean:
@@ -113,15 +132,19 @@ class SentimentAnalyzer:
       else:
         return "NEUTRAL", 2.0
 
-      # Analizar texto combinado
+      # Procesa el texto combinado usando el analizador principal
       return self.analyze_text(combined_text)
       
     except Exception as e:
       log.error(f"Error en analyze_review: {e}")
       return "ERROR", 2.0
 
+# ========================================================================================================
+#                                      ANALIZAR RESEÑAS DE ATRACCIÓN
+# ========================================================================================================
+
   async def analyze_attraction_reviews(self, attraction_data: Dict) -> Dict:
-    """Analiza todas las reseñas no analizadas de una atracción"""
+    # PROCESA TODAS LAS RESEÑAS NO ANALIZADAS DE UNA ATRACCIÓN ESPECÍFICA
     if self.nlp is None:
       log.warning("Modelo no disponible")
       return attraction_data
@@ -131,18 +154,18 @@ class SentimentAnalyzer:
     newly_analyzed = 0
     
     for review in reviews:
-      # Saltar si ya tiene análisis
+      # Omite reseñas que ya tienen análisis previo
       if review.get("sentiment") and review.get("sentiment_score") is not None:
         analyzed_reviews.append(review)
         continue
       
-      # Analizar nueva reseña
+      # Analiza reseña nueva
       sentiment, score = self.analyze_review(
         review.get("title"), 
         review.get("review_text")
       )
       
-      # Actualizar reseña
+      # Actualiza reseña con resultados del análisis
       updated_review = {
         **review,
         "sentiment": sentiment,
@@ -156,19 +179,23 @@ class SentimentAnalyzer:
       attraction_name = attraction_data.get('attraction_name', 'Atracción')
       log.info(f"{newly_analyzed} reseñas analizadas para {attraction_name}")
     
-    # Devolver atracción actualizada
+    # Retorna atracción con todas las reseñas actualizadas
     return {
       **attraction_data,
       "reviews": analyzed_reviews,
       "last_analyzed_date": datetime.now(timezone.utc).isoformat()
     }
 
+# ========================================================================================================
+#                                       ANALIZAR RESEÑAS DE REGIÓN
+# ========================================================================================================
+
   async def analyze_region_reviews(
     self, 
     region_data: Dict, 
     progress_callback: Optional[callable] = None
   ) -> Dict:
-    """Analiza todas las reseñas de todas las atracciones en una región"""
+    # PROCESA TODAS LAS RESEÑAS DE TODAS LAS ATRACCIONES EN UNA REGIÓN
     if self.nlp is None:
       log.error("Modelo no disponible")
       if progress_callback:
@@ -193,11 +220,11 @@ class SentimentAnalyzer:
     for i, attraction in enumerate(attractions):
       attraction_name = attraction.get("attraction_name", f"Atracción #{i+1}")
       
-      # Analizar atracción
+      # Procesa cada atracción individualmente
       analyzed_attraction = await self.analyze_attraction_reviews(attraction)
       analyzed_attractions.append(analyzed_attraction)
       
-      # Actualizar progreso
+      # Actualiza callback de progreso si está disponible
       if progress_callback:
         progress = (i + 1) / total_attractions
         status = f"{attraction_name} ({i+1}/{total_attractions})"
@@ -214,8 +241,12 @@ class SentimentAnalyzer:
       "last_analyzed_date": datetime.now(timezone.utc).isoformat()
     }
 
+# ========================================================================================================
+#                                        ESTADÍSTICAS DE SENTIMIENTOS
+# ========================================================================================================
+
   def get_sentiment_stats(self, reviews: List[Dict]) -> Dict:
-    """Obtiene estadísticas de sentimientos de reseñas"""
+    # CALCULA MÉTRICAS Y DISTRIBUCIÓN DE SENTIMIENTOS DE UNA LISTA DE RESEÑAS
     if not reviews:
       return {
         "total_reviews": 0,
@@ -224,7 +255,7 @@ class SentimentAnalyzer:
         "sentiment_counts": {}
       }
     
-    # Contar sentimientos
+    # Contabiliza sentimientos y scores para estadísticas
     sentiment_counts = {}
     sentiment_scores = []
     
@@ -239,7 +270,7 @@ class SentimentAnalyzer:
     total_analyzed = len(sentiment_scores)
     average_score = sum(sentiment_scores) / total_analyzed if sentiment_scores else 2.0
     
-    # Calcular distribución porcentual
+    # Calcula distribución porcentual de cada categoría
     distribution = {}
     for sentiment, count in sentiment_counts.items():
       distribution[sentiment] = round((count / total_analyzed) * 100, 1) if total_analyzed > 0 else 0
