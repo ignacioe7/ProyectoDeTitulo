@@ -191,6 +191,8 @@ def _handle_active_scraping(data_handler, region_configs):
       'activo': False, 
       'detener': False
     })
+    # recargar datos para reflejar cambios en la tabla de progreso
+    data_handler.reload_data()
     st.rerun()
 
 # ====================================================================================================================
@@ -271,6 +273,13 @@ def _run_scraping_sync(data_handler, region_configs, region_name, progress_conta
         # completar barra de progreso al 100% al finalizar
         progress_bar.progress(1.0)
         
+        # guardar datos finales y recargar para actualizar tabla
+        if st.session_state.scraping['atracciones']:
+          await data_handler.save_attractions(
+            region_name, 
+            st.session_state.scraping['atracciones']
+          )
+        
         # mostrar resumen final usando mismo placeholder para consistencia
         status_placeholder.success(f"""
         **Scraping Completado:**
@@ -287,7 +296,7 @@ def _run_scraping_sync(data_handler, region_configs, region_name, progress_conta
       status_placeholder.error(f"Error durante scraping: {str(e)}")
       return False
   
-  # ejecutar corrutina asíncrona en contexto síncrono de streamlit
+  # ejecutar asíncrono usando asyncio.run para compatibilidad con Streamlit
   return asyncio.run(scraping_coroutine())
 
 # ====================================================================================================================

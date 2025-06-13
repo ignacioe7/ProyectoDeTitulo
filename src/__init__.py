@@ -1,8 +1,3 @@
-# MÓDULO DE INICIALIZACIÓN PRINCIPAL DEL PAQUETE SRC
-# Centraliza acceso a componentes core del sistema de scraping
-# Define API pública para importación externa de clases principales
-
-# importar clases fundamentales del sistema desde módulo core
 from .core import DataHandler, AttractionScraper, ReviewScraper
 
 # versión actual del proyecto para tracking de releases

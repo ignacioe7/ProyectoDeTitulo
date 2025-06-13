@@ -79,7 +79,7 @@ def render(data_handler):
   # RENDERIZA INTERFAZ PRINCIPAL PARA ANÁLISIS DE SENTIMIENTOS
   # Coordina validación de datos, carga de modelo y control de proceso
   # Maneja flujo completo desde selección de región hasta visualización de resultados
-  st.header("🤖 Análisis de Sentimientos")
+  st.header("Análisis de Sentimientos")
   
   # verificar estado de análisis activo desde session state
   analysis_active = st.session_state.get('analysis_active', False)

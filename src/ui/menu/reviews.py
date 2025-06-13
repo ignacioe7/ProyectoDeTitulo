@@ -139,8 +139,10 @@ def render(data_handler):
       time.sleep(0.5)
       st.rerun()
   
-  # mostrar tabla resumen con estado de todas las regiones
-  _render_scraped_regions_table(data_handler, scraped_regions)
+  # obtener datos actualizados después del scraping para mostrar en tabla
+  updated_scraped_regions = data_handler.data.get("regions", [])
+  _render_scraped_regions_table(data_handler, updated_scraped_regions)
+
 
 # ====================================================================================================================
 #                                           OBTENER TIEMPO TRANSCURRIDO
@@ -234,20 +236,38 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
     # calcular estadísticas de reseñas por región
     total_reviews = 0
     attractions_with_reviews = 0
+    attractions_scraped = 0  # contador de atracciones procesadas
     
     for attraction in attractions:
       reviews = attraction.get("reviews", [])
+      reviews_count = attraction.get("reviews_count", 0)
+      last_review_scrape = attraction.get("last_reviews_scrape_date")
+      
+      # contar reseñas disponibles
       if reviews:
         total_reviews += len(reviews)
         attractions_with_reviews += 1
+      
+      # considerar como scrapeada si:
+      # 1. Tiene reseñas scrapeadas, O
+      # 2. No tiene reseñas disponibles (reviews_count = 0), O  
+      # 3. Tiene fecha de último scraping de reseñas
+      if reviews or reviews_count == 0 or last_review_scrape:
+        attractions_scraped += 1
     
-    # determinar estado visual basado en reseñas disponibles
-    if total_reviews > 0:
-      estado_reseñas = "Con reseñas"
-      progreso_reseñas = f"{attractions_with_reviews}/{attraction_count}"
+    # determinar estado visual basado en progreso de scraping
+    if attractions_scraped == attraction_count:
+      if total_reviews > 0:
+        estado_reseñas = "Completado"
+      else:
+        estado_reseñas = "Sin reseñas disponibles"
+    elif attractions_scraped > 0:
+      estado_reseñas = "En progreso"
     else:
-      estado_reseñas = "Sin reseñas"
-      progreso_reseñas = f"0/{attraction_count}"
+      estado_reseñas = "Pendiente"
+    
+    # mostrar progreso de scraping (incluye atracciones sin reseñas)
+    progreso_reseñas = f"{attractions_scraped}/{attraction_count}"
     
     # agregar fila de datos a tabla
     table_data.append({
@@ -275,7 +295,7 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
         "Atracciones": st.column_config.NumberColumn(
           "Atracciones", 
           width="auto",
-          help="Número de atracciones scrapeadas"
+          help="Número total de atracciones en la región"
         ),
         "Scrapeado": st.column_config.TextColumn(
           "Scrapeado", 
@@ -285,12 +305,12 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
         "Estado": st.column_config.TextColumn(
           "Estado", 
           width="auto",
-          help="Estado del scraping de reseñas"
+          help="Estado del progreso de scraping de reseñas"
         ),
         "Progreso": st.column_config.TextColumn(
           "Progreso", 
           width="auto",
-          help="Atracciones con reseñas vs total"
+          help="Atracciones procesadas vs total (incluye las sin reseñas disponibles)"
         ),
         "Reseñas": st.column_config.NumberColumn(
           "Reseñas",
@@ -311,14 +331,26 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
     col2.metric("Atracciones", total_attractions)
     col3.metric("Reseñas", f"{total_reviews:,}")
     
-    # barra de progreso visual para completitud de reseñas
-    regions_with_reviews = len([item for item in table_data if item["Reseñas"] > 0])
+    # barra de progreso visual para completitud de scraping
+    regions_completed = 0
+    for item in table_data:
+      progreso_parts = item["Progreso"].split("/")
+      if len(progreso_parts) == 2:
+        scraped = int(progreso_parts[0])
+        total = int(progreso_parts[1])
+        if scraped == total:
+          regions_completed += 1
+    
     if total_regions > 0:
-      reviews_progress = (regions_with_reviews / total_regions) * 100
-      st.progress(reviews_progress / 100)
-      st.caption(f"Progreso de reseñas: {reviews_progress:.1f}% de regiones tienen reseñas scrapeadas")
+      scraping_progress = (regions_completed / total_regions) * 100
+      st.progress(scraping_progress / 100)
+      st.caption(f"Progreso de scraping: {scraping_progress:.1f}% de regiones completamente procesadas")
   else:
     st.info("No hay datos de regiones para mostrar")
+
+# ====================================================================================================================
+#                                       EJECUTAR SESIÓN DE SCRAPING DE RESEÑAS
+# ====================================================================================================================
 
 # ====================================================================================================================
 #                                       EJECUTAR SESIÓN DE SCRAPING DE RESEÑAS
