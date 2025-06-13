@@ -1,8 +1,18 @@
+# MÓDULO DE UTILIDADES DE RED PARA SCRAPING INTELIGENTE
+# Implementa pausas adaptativas para evitar detección anti-bot
+# Proporciona delays escalados según progreso y patrones de uso
+
 import asyncio
 import random
 
+# ====================================================================================================================
+#                                         PAUSA INTELIGENTE ANTI-DETECCIÓN
+# ====================================================================================================================
+
 async def smart_sleep(current_page: int, base_delay: float = 3.0):
-  """pausa inteligente para evitar ser bloqueado en poco tiempo por tripadvisor"""
+  # IMPLEMENTA PAUSAS ESCALADAS PARA EVITAR BLOQUEO POR TRIPADVISOR
+  # Ajusta delay según número de página procesada con intervalos específicos
+  # Usa aleatorización para simular comportamiento humano natural
   delay = base_delay 
   
   if current_page % 100 == 0:

@@ -1,7 +1,12 @@
+# APLICACIÓN PRINCIPAL DE STREAMLIT PARA ANÁLISIS DE SENTIMIENTOS TRIPADVISOR
+# Archivo principal que configura la interfaz web y maneja la navegación entre módulos
+# Implementa sistema de bloqueo de navegación durante procesos activos
+
 import sys
 import os
 import streamlit as st
 
+# configuración del path para importaciones relativas
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 from src.utils import setup_logging  # config del logger
@@ -12,7 +17,7 @@ from src.ui.menu import analyzer, attractions, filters, home, results, reviews  
 from loguru import logger as log 
 from src.core.data_handler import DataHandler  # gestor de datos principal
 
-# config de página
+# configuración inicial de la página web con layout amplio y sidebar expandido
 st.set_page_config(
   page_title="Análisis de Sentimientos TripAdvisor",
   page_icon="📊",
@@ -20,24 +25,37 @@ st.set_page_config(
   initial_sidebar_state="expanded"
 )
 
+# ====================================================================================================================
+#                                             OBTENER GESTOR DE DATOS
+# ====================================================================================================================
+
 @st.cache_resource  # cachear para tener una única instancia
 def get_data_handler():
-  """Carga instancia única de DataHandler"""
+  # OBTIENE INSTANCIA ÚNICA DE DATAHANDLER CON MANEJO DE ERRORES
+  # Carga el gestor principal de datos con cache para evitar múltiples instancias
+  # Retorna handler válido o None en caso de error crítico
   try:
     handler = DataHandler()
-    log.info("DataHandler cargado")
+    log.info("DataHandler cargado exitosamente")
     return handler
   except Exception as e:
-    log.error(f"Fallo DataHandler: {e}")
+    log.error(f"Error crítico al cargar DataHandler: {e}")
     st.error(f"Error crítico DataHandler: {e}")
     return None
 
+# ====================================================================================================================
+#                                         OBTENER INFORMACIÓN DE PROCESOS ACTIVOS
+# ====================================================================================================================
+
 def get_active_process_info():
-  """Info sobre procesos activos"""
+  # DETERMINA QUÉ PROCESO ESTÁ ACTUALMENTE EN EJECUCIÓN
+  # Verifica estados de session para identificar procesos activos de scraping o análisis
+  # Retorna tipo de proceso, nombre descriptivo y índice del menú correspondiente
   scraping_active = st.session_state.get('scraping_active', False)
   attractions_scraping_active = st.session_state.get('attractions_scraping_active', False)
   analysis_active = st.session_state.get('analysis_active', False)
   
+  # mapeo de estados a información de proceso
   if scraping_active:
     return "scraping_reviews", "Scraping de Reseñas", 2
   elif attractions_scraping_active:
@@ -47,8 +65,14 @@ def get_active_process_info():
   else:
     return None, None, 0
 
+# ====================================================================================================================
+#                                            INYECTAR ESTILOS CSS DE BLOQUEO
+# ====================================================================================================================
+
 def inject_blocking_css():
-  """Inyecta CSS que bloquea clicks del menú"""
+  # INYECTA ESTILOS CSS PARA BLOQUEAR NAVEGACIÓN DURANTE PROCESOS ACTIVOS
+  # Aplica estilos que deshabilitan elementos del menú excepto el activo
+  # Utiliza pointer-events y overlay visual para prevenir interacción del usuario
   st.markdown("""
   <style>
   /* Bloquear todos los elementos del menú excepto el activo */
@@ -86,28 +110,38 @@ def inject_blocking_css():
   </style>
   """, unsafe_allow_html=True)
 
+# ====================================================================================================================
+#                                            MOSTRAR ADVERTENCIAS ANTI-BOT
+# ====================================================================================================================
+
 def show_anti_bot_warning():
-  """Muestra advertencia sobre sistemas anti-bot"""
+  # MUESTRA ADVERTENCIAS SOBRE SISTEMAS ANTI-BOT DE TRIPADVISOR
+  # Informa sobre detección automatizada y mejores prácticas para evitar bloqueos
+  # Recomienda configuraciones de concurrencia seguras para scraping
   st.sidebar.markdown("---")
   st.sidebar.warning(
-    "⚠️ **Importante:** Si el scraping se completa muy rápido "
+    "Importante: Si el scraping se completa muy rápido "
     "(menos de 30 segundos), es posible que TripAdvisor haya detectado "
     "actividad automatizada y esté bloqueando las peticiones."
   )
   st.sidebar.info(
-    "💡 **Recomendación:** Usa configuraciones de concurrencia bajas "
+    "Recomendación: Usa configuraciones de concurrencia bajas "
     "(1-2) y evita hacer scraping frecuente en períodos cortos."
   )
 
-# Obtener instancia de DataHandler
+# ====================================================================================================================
+#                                           INICIALIZACIÓN PRINCIPAL
+# ====================================================================================================================
+
+# obtener instancia única de DataHandler con manejo de errores
 data_handler = get_data_handler()
 
-# Verificar si DataHandler se cargó correctamente
+# verificación crítica de disponibilidad del gestor de datos
 if data_handler is None:
   st.sidebar.error("Error: DataHandler no disponible")
   st.stop()
 
-# Inicializar estados si no existen
+# inicialización de estados de sesión para control de procesos activos
 if 'scraping_active' not in st.session_state:
   st.session_state.scraping_active = False
 if 'attractions_scraping_active' not in st.session_state:
@@ -115,30 +149,35 @@ if 'attractions_scraping_active' not in st.session_state:
 if 'analysis_active' not in st.session_state:
   st.session_state.analysis_active = False
 
-# Obtener info del proceso activo
+# obtención de información sobre procesos activos actuales
 process_type, process_name, active_index = get_active_process_info()
 any_process_active = process_type is not None
 
-# Inyectar CSS de bloqueo
+# aplicación de estilos CSS de bloqueo si hay procesos activos
 inject_blocking_css()
 
-# Menú principal en la barra lateral
+# ====================================================================================================================
+#                                       CONSTRUCCIÓN DEL MENÚ LATERAL
+# ====================================================================================================================
+
+# CONSTRUCCIÓN DEL MENÚ LATERAL CON SISTEMA DE BLOQUEO
 with st.sidebar:
-  # Mostrar estado si hay proceso activo
+  # mostrar indicadores visuales de estado activo
   if any_process_active:
     st.error(f"**{process_name.upper()} ACTIVO**")
     st.warning("Navegación bloqueada")
     st.markdown("---")
   
-  # Aplicar clase de bloqueo condicionalmente
+  # aplicar clases CSS de bloqueo condicionalmente
   menu_class = "blocked-menu" if any_process_active else ""
   
   if any_process_active:
     st.markdown(f'<div class="{menu_class}">', unsafe_allow_html=True)
   
-  # Menú con key dinámica para forzar re-render
+  # generar key dinámica para mantener estado del menú
   menu_key = f"menu_{process_type}_{active_index}" if any_process_active else "menu_normal"
   
+  # construir menú principal con opciones y iconos
   selected = option_menu(
     menu_title="Menú Principal",
     options=[
@@ -156,17 +195,22 @@ with st.sidebar:
     key=menu_key
   )
   
+  # cerrar contenedor de bloqueo y mostrar info
   if any_process_active:
     st.markdown('</div>', unsafe_allow_html=True)
     st.info("Solo la página activa es accesible")
   
-  # Mostrar advertencia anti-bot para páginas de scraping
+  # mostrar advertencias específicas para páginas de scraping
   if selected in ["Scraping de Atracciones", "Scraping de Reseñas"]:
     show_anti_bot_warning()
 
-# Forzar selección si hay proceso activo
+# ====================================================================================================================
+#                                      SISTEMA DE CONTROL DE NAVEGACIÓN
+# ====================================================================================================================
+
+# SISTEMA DE CONTROL DE NAVEGACIÓN FORZADA
 if any_process_active:
-  # Mapeo de índices a páginas
+  # mapeo de índices numéricos a nombres de páginas
   index_to_page = {
     0: "Inicio",
     1: "Scraping de Atracciones", 
@@ -176,16 +220,21 @@ if any_process_active:
     5: "Filtros y descargas"
   }
   
-  # Obtener página activa permitida
+  # determinar página permitida según proceso activo
   allowed_page = index_to_page[active_index]
   
-  # Si el usuario logra cambiar forzar regreso
+  # forzar retorno a página permitida si el usuario intenta cambiar
   if selected != allowed_page:
     st.error(f"**Acceso denegado durante {process_name.lower()}**")
     selected = allowed_page
 
-# Renderizar la página seleccionada
+# ====================================================================================================================
+#                                     RENDERIZADO CONDICIONAL DE PÁGINAS
+# ====================================================================================================================
+
+# RENDERIZADO CONDICIONAL DE PÁGINAS CON CONTROL DE ACCESO
 if selected == "Inicio":
+  # renderizar página de inicio con bloqueo durante procesos activos
   if any_process_active:
     st.error(f"**Inicio no disponible durante {process_name.lower()}**")
     st.info("Detén el proceso activo para acceder")
@@ -193,6 +242,7 @@ if selected == "Inicio":
     home.render()
 
 elif selected == "Scraping de Atracciones":
+  # renderizar módulo de scraping de atracciones con validación de estado
   if any_process_active and process_type != "scraping_attractions":
     st.error(f"**Scraping de Atracciones no disponible durante {process_name.lower()}**")
     st.info("Detén el proceso activo para acceder")
@@ -202,6 +252,7 @@ elif selected == "Scraping de Atracciones":
     st.error("DataHandler no disponible")
 
 elif selected == "Scraping de Reseñas":
+  # renderizar módulo de scraping de reseñas con validación de estado
   if any_process_active and process_type != "scraping_reviews":
     st.error(f"**Scraping de Reseñas no disponible durante {process_name.lower()}**")
     st.info("Detén el proceso activo para acceder")
@@ -211,6 +262,7 @@ elif selected == "Scraping de Reseñas":
     st.error("DataHandler no disponible")
 
 elif selected == "Análisis de Sentimientos":
+  # renderizar módulo de análisis con validación de estado
   if any_process_active and process_type != "analysis":
     st.error(f"**Análisis no disponible durante {process_name.lower()}**")
     st.info("Detén el proceso activo para acceder")
@@ -220,6 +272,7 @@ elif selected == "Análisis de Sentimientos":
     st.error("DataHandler no disponible")
 
 elif selected == "Resultados y Visualización":
+  # renderizar módulo de resultados bloqueado durante procesos activos
   if any_process_active:
     st.error(f"**Resultados no disponibles durante {process_name.lower()}**")
     st.info("Detén el proceso activo para acceder")
@@ -229,6 +282,7 @@ elif selected == "Resultados y Visualización":
     st.error("DataHandler no disponible")
   
 elif selected == "Filtros y descargas":
+  # renderizar módulo de filtros bloqueado durante procesos activos
   if any_process_active:
     st.error(f"**Filtros y descargas no disponibles durante {process_name.lower()}**")
     st.info("Detén el proceso activo para acceder")
@@ -237,5 +291,5 @@ elif selected == "Filtros y descargas":
   else:
     st.error("DataHandler no disponible")
 
-# Log mínimo
-log.debug(f"Página: {selected} | Proceso: {process_name or 'ninguno'}")
+# registro básico de navegación para depuración y monitoreo
+log.debug(f"Página activa: {selected} | Proceso en ejecución: {process_name or 'ninguno'}")

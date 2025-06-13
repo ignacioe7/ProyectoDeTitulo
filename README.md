@@ -5,15 +5,15 @@ Un proyecto de investigación académica para analizar sentimientos en reseñas 
 ## 📋 Características
 
 - **Scraping inteligente** de datos de atracciones turísticas
-- **Análisis de sentimientos** usando DistilBERT
+- **Análisis de sentimientos** usando multilingual-sentiment-analysis
 - **Interfaz web moderna** con Streamlit
-- **Exportación de datos** a Excel y JSON
+- **Exportación de datos** a Excel, JSON, CSV
 - **Visualizaciones interactivas** de resultados
 - **Procesamiento concurrente** para mejor rendimiento
 
 ## 🛠️ Tecnologías
 
-- **Python 3.8+**
+- **Python 3.11+**
 - **Streamlit** - Interfaz web
 - **Transformers** - Análisis de sentimientos
 - **PyTorch** - Machine Learning
@@ -24,8 +24,8 @@ Un proyecto de investigación académica para analizar sentimientos en reseñas 
 
 ### 1. Clonar el repositorio
 ```bash
-git clone https://github.com/user/nombre_proyecto.git
-cd proyecto_cientifico
+git clone https://github.com/ignacioe7/ProyectoDeTitulo.git
+cd ProyectoDeTitulo
 ```
 
 ### 2. Crear entorno virtual
@@ -53,10 +53,10 @@ streamlit run src/ui/streamlit_app.py
 
 ### Funcionalidades principales
 
-1. **Configurar regiones** - Define las áreas geográficas a analizar
+1. **Configurar regiones** - Define las regiones a extraer
 2. **Extraer atracciones** - Obtiene listado de lugares turísticos
 3. **Scrapear reseñas** - Recolecta comentarios de usuarios
-4. **Analizar sentimientos** - Clasifica opiniones como positivas/negativas
+4. **Analizar sentimientos** - Clasifica opiniones como Muy negativas/Negativas/Neutras/Positivas/Muy positivas
 5. **Visualizar resultados** - Genera gráficos y estadísticas
 6. **Exportar datos** - Guarda resultados en diferentes formatos
 
@@ -80,9 +80,7 @@ proyecto_cientifico/
 ## 🎯 Casos de uso
 
 - **Investigación académica** sobre turismo y opinión pública
-- **Análisis de mercado** para destinos turísticos
 - **Estudios de satisfacción** de visitantes
-- **Benchmarking** de atracciones similares
 
 ## ⚠️ Consideraciones legales y éticas
 
@@ -98,6 +96,16 @@ Los usuarios son completamente responsables de:
 4. **Respetar robots.txt** y políticas de scraping del sitio web
 5. **No usar con fines comerciales** sin autorización explícita
 
+### Principales tecnologías utilizadas
+
+1. **Parsel**
+2. **Pandas**
+3. **loguru**
+4. **streamlit**
+5. **torch**
+6. **transformers**
+7. **Git**
+
 ### 🚫 Limitaciones
 
 - TripAdvisor **prohíbe explícitamente** la extracción automatizada de datos
@@ -112,30 +120,16 @@ Los usuarios son completamente responsables de:
 - **Considerar APIs oficiales** cuando estén disponibles
 - **Citar apropiadamente** el uso de datos en publicaciones
 
-## 🤝 Contribuir
-
-Las contribuciones son bienvenidas para mejorar el proyecto educativo:
-
-1. Fork el repositorio
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
-
-## 📝 Licencia
-
-Este proyecto está bajo licencia MIT para uso educativo. Ver `LICENSE` para más detalles.
 
 ## 👥 Autores
 
-- **Tu Nombre** - *Trabajo inicial* - [tu-usuario](https://github.com/tu-usuario)
+- **Dorian Canales** - **Ignacio Villalobos** - *Proyecto de Título* 
 
 ## 🙏 Agradecimientos
 
 - Comunidad de Hugging Face por los modelos de NLP
 - Streamlit por la plataforma de desarrollo
 - Contribuidores de las librerías open source utilizadas
+- Vicente Herrera, Ignacio Villalobos y Dorian Canales
 
 ---
-
-**⚡ Nota**: Este README está escrito con fines educativos. Siempre verifica la legalidad del web scraping en tu jurisdicción y respeta los términos de servicio de los sitios web.
