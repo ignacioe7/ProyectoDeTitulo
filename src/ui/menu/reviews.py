@@ -48,25 +48,24 @@ def render(data_handler):
   region_names_ui.sort()
 
   # Widgets de UI - deshabilitar si hay scraping activo
-  selected_region_name_ui = st.selectbox(
-    "Selecciona una Región (solo con atracciones scrapeadas):",
-    options=[""] + region_names_ui,
-    format_func=lambda x: "Selecciona una opción..." if x == "" else f"{x} ({regions_with_attractions.get(x, 0)} atracciones)",
-    key="reviews_region_selectbox",
-    disabled=scraping_active
-  )
-
-  # Mostrar info de la región seleccionada
-  if selected_region_name_ui:
-    attraction_count = regions_with_attractions.get(selected_region_name_ui, 0)
-    st.info(f"Región seleccionada: **{selected_region_name_ui}** con **{attraction_count}** atracciones")
-
-  # Control de concurrencia
-  st.markdown("### Configuración de Scraping")
-  
-  col1, col2 = st.columns(2)
-  
+  col1 , col2 = st.columns(2)
   with col1:
+    selected_region_name_ui = st.selectbox(
+      "Selecciona una Región (solo con atracciones scrapeadas):",
+      options=[""] + region_names_ui,
+      format_func=lambda x: "Selecciona una opción..." if x == "" else f"{x} ({regions_with_attractions.get(x, 0)} atracciones)",
+      key="reviews_region_selectbox",
+      disabled=scraping_active
+    )
+    # Mostrar info de la región seleccionada
+    if selected_region_name_ui:
+      attraction_count = regions_with_attractions.get(selected_region_name_ui, 0)
+      st.info(f"Región seleccionada: **{selected_region_name_ui}** con **{attraction_count}** atracciones")
+
+
+  with col1:
+    # Control de concurrencia
+    st.markdown("### Configuración de Scraping")
     max_concurrency = st.slider(
       "Concurrencia máxima:",
       min_value=1,
@@ -75,16 +74,7 @@ def render(data_handler):
       help="Número de atracciones a procesar simultáneamente",
       disabled=scraping_active
     )
-  
-  with col2:
-    max_retries = st.slider(
-      "Máximos reintentos:",
-      min_value=1,
-      max_value=5,
-      value=st.session_state.get('max_retries', 3),
-      help="Número de reintentos cuando falla una página",
-      disabled=scraping_active
-    )
+
 
   # Estado de la aplicación en session_state
   if 'scraping_active' not in st.session_state:
@@ -95,29 +85,23 @@ def render(data_handler):
   ui_status_placeholder = st.empty()
 
   # Botones de control
-  st.markdown("### Control de Scraping")
-  col1, col2 = st.columns(2)
-  
   with col1:
-    if st.button("Iniciar", disabled=scraping_active, key="start_button"):
+    if st.button("Iniciar", disabled=scraping_active, key="start_button", use_container_width=True):
       if selected_region_name_ui:
         st.session_state.scraping_active = True
         st.session_state.should_stop = False
         st.session_state.max_concurrency = max_concurrency
-        st.session_state.max_retries = max_retries
         log.info(f"Iniciando scraping para {selected_region_name_ui}")
         st.rerun()
       else:
         ui_status_placeholder.warning("Selecciona una región válida")
   
-  """ with col2:
-    if st.button("Detener", disabled=not scraping_active, key="stop_button"):
-      st.session_state.should_stop = True
-      log.info("Solicitando detención de scraping")
-      ui_status_placeholder.warning("Deteniendo scraping... Por favor espera") """
-  
-  # Mostrar estado actual solo si está activo
+  # PROGRESO DEL SCRAPING
   if scraping_active:
+    st.markdown("---")
+    st.markdown("### Progreso del Scraping")
+    
+    # Mostrar estado actual
     if st.session_state.should_stop:
       st.warning("Deteniendo scraping... Por favor espera")
     else:
@@ -128,13 +112,8 @@ def render(data_handler):
       
       # Guardar región actual en session_state
       st.session_state.current_scraping_region = selected_region_name_ui
-  
-  # Mostrar tabla con estado de regiones scrapeadas al final
-  _render_scraped_regions_table(data_handler, scraped_regions)
-  
-  # Elementos de progreso (siempre visibles cuando está activo)
-  if scraping_active:
-    st.markdown("### Progreso del Scraping")
+    
+    # Elementos de progreso
     progress_bar = st.progress(0)
     status_text = st.empty()
     
@@ -151,6 +130,9 @@ def render(data_handler):
     if not st.session_state.scraping_active:
       time.sleep(0.5)
       st.rerun()
+  
+  # Mostrar tabla con estado de regiones scrapeadas al final
+  _render_scraped_regions_table(data_handler, scraped_regions)
 
 def _get_time_ago(date_string):
   """Convierte una fecha a formato 'hace X tiempo'"""
@@ -312,6 +294,7 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
   else:
     st.info("No hay datos de regiones para mostrar")
 
+
 def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status_placeholder, progress_bar, status_text):
   """Maneja sesión de scraping usando asyncio"""
   async def async_scraping():
@@ -323,6 +306,9 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
       
       if not region_consolidated_data or not region_consolidated_data.get("attractions"):
         ui_status_placeholder.warning(f"No se encontraron atracciones para '{selected_region_name_ui}'")
+        # Resetear estado y SALIR inmediatamente
+        st.session_state.scraping_active = False
+        st.session_state.should_stop = False
         return
       
       attractions_data_for_region = region_consolidated_data.get("attractions", [])
@@ -330,6 +316,9 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
       
       if total_attractions == 0:
         ui_status_placeholder.warning(f"No hay atracciones en '{selected_region_name_ui}' para scrapear")
+        # Resetear estado y SALIR inmediatamente
+        st.session_state.scraping_active = False
+        st.session_state.should_stop = False
         return
       
       # Obtener config del session state
@@ -433,7 +422,7 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
             ui_status_placeholder.warning(final_message)
           else:
             final_message = (
-              f"Scraping completado\n"
+              f"Scraping completado exitosamente\n"
               f"Atracciones procesadas: {total_successfully_processed}/{total_attractions}\n"
               f"Total reseñas recopiladas: {total_reviews_collected}"
             )
@@ -455,10 +444,14 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
       ui_status_placeholder.error(error_msg)
       
     finally:
-      # Resetear el estado al finalizar
-      log.info("Sesión de scraping finalizada")
+      # Resetear el estado al finalizar - CRÍTICO
+      log.info("Sesión de scraping finalizada - reseteando estado")
       st.session_state.scraping_active = False
       st.session_state.should_stop = False
+      # Recargar datos para reflejar cambios
+      if hasattr(data_handler, 'reload_data'):
+        data_handler.reload_data()
+      log.info("Estado reseteado completamente")
   
   # Ejecutar el scraping async
   asyncio.run(async_scraping())

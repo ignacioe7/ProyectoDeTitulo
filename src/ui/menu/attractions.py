@@ -59,7 +59,7 @@ def _render_scraping_controls(data_handler, region_configs):
   
   available_regions = sorted(list(region_configs.keys()))
   
-  col1, col2 = st.columns([3, 1])
+  col1, col2 = st.columns(2)
   
   with col1:
     selected_region = st.selectbox(
@@ -77,8 +77,9 @@ def _render_scraping_controls(data_handler, region_configs):
         st.success(f"URL configurada para {selected_region}")
       else:
         st.warning(f"No hay URL configurada para {selected_region}")
-  
-  with col2:
+
+  col1, col2, col3, col4 = st.columns(4)
+  with col1:
     # Botón de inicio
     start_disabled = (
       st.session_state.scraping['activo'] or 
@@ -88,7 +89,7 @@ def _render_scraping_controls(data_handler, region_configs):
     
     if st.button("Iniciar", disabled=start_disabled, use_container_width=True):
       _start_scraping(selected_region)
-    
+  with col2:
     # Botón de detener
     if st.button("Detener", disabled=not st.session_state.scraping['activo'], use_container_width=True):
       st.session_state.scraping['detener'] = True
@@ -170,20 +171,20 @@ def _run_scraping_sync(data_handler, region_configs, region_name, progress_conta
         page_count = 0
         total_attractions = 0
         
-        # Barra de progreso
+        # Crear placeholders que se pueden actualizar
         progress_bar = progress_container.progress(0)
+        status_placeholder = status_container.empty()  # Placeholder para el estado
         
         while current_url and not st.session_state.scraping['detener']:
           page_count += 1
           
-          # Actualizar estado
-          with status_container.container():
-            st.markdown(f"""
-            **Progreso:**
-            - Página actual: {page_count}
-            - Atracciones encontradas: {total_attractions}
-            - URL actual: {current_url[:80]}...
-            """)
+          # Actualizar estado usando el placeholder (se reemplaza, no se apila)
+          status_placeholder.markdown(f"""
+          **Progreso:**
+          - Página actual: {page_count}
+          - Atracciones encontradas: {total_attractions}
+          - URL actual: {current_url[:80]}...
+          """)
           
           # Scrapear página
           page_data = await scraper.scrape_page(current_url)
@@ -218,20 +219,19 @@ def _run_scraping_sync(data_handler, region_configs, region_name, progress_conta
         # Completar progreso
         progress_bar.progress(1.0)
         
-        # Mostrar resumen final
-        with status_container.container():
-          st.success(f"""
-          **Scraping Completado:**
-          - Páginas procesadas: {page_count}
-          - Total atracciones: {total_attractions}
-          - Región: {region_name}
-          """)
+        # Mostrar resumen final usando el mismo placeholder
+        status_placeholder.success(f"""
+        **Scraping Completado:**
+        - Páginas procesadas: {page_count}
+        - Total atracciones: {total_attractions}
+        - Región: {region_name}
+        """)
         
         return True
         
     except Exception as e:
       log.error(f"Error en scraping asíncrono: {e}")
-      status_container.error(f"Error durante scraping: {str(e)}")
+      status_placeholder.error(f"Error durante scraping: {str(e)}")
       return False
   
   # Ejecutar la corrutina
@@ -320,50 +320,52 @@ def _render_regions_table(data_handler, region_configs):
   # Mostrar tabla
   if table_data:
     df = pd.DataFrame(table_data)
-    st.dataframe(
-      df,
-      use_container_width=True,
-      hide_index=True,
-      column_config={
-        "Región": st.column_config.TextColumn(
-          "Región", 
-          width="auto",
-          help="Nombre de la región turística"
-        ),
-        "Estado": st.column_config.TextColumn(
-          "Estado", 
-          width="auto",
-          help="Estado del scraping de atracciones"
-        ),
-        "Última Scrapeada": st.column_config.TextColumn(
-          "Última Scrapeada", 
-          width="auto",
-          help="Tiempo transcurrido desde el último scraping"
-        ),
-        "Atracciones": st.column_config.NumberColumn(
-          "Atracciones",
-          width="auto",
-          format="%d",
-          help="Número total de atracciones encontradas"
-        )
-      }
-    )
-    
-    # Métricas resumen
-    col1, col2, col3 = st.columns(3)
-    total_regions = len(region_configs)
-    scraped_count = len([r for r in scraped_regions_data.values() if r])
-    total_attractions = sum(item.get("attractions_count", 0) for item in scraped_regions_data.values())
-    
-    col1.metric("Total Regiones", total_regions)
-    col2.metric("Scrapeadas", f"{scraped_count}/{total_regions}")
-    col3.metric("Total Atracciones", f"{total_attractions:,}")
-    
-    # Mostrar progreso visual
-    if total_regions > 0:
-      progress_percentage = (scraped_count / total_regions) * 100
-      st.progress(progress_percentage / 100)
-      st.caption(f"Progreso general: {progress_percentage:.1f}% completado")
+    col1, col2 = st.columns(2)
+    with col1:
+      st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+          "Región": st.column_config.TextColumn(
+            "Región", 
+            width="auto",
+            help="Nombre de la región turística"
+          ),
+          "Estado": st.column_config.TextColumn(
+            "Estado", 
+            width="auto",
+            help="Estado del scraping de atracciones"
+          ),
+          "Última Scrapeada": st.column_config.TextColumn(
+            "Última Scrapeada", 
+            width="auto",
+            help="Tiempo transcurrido desde el último scraping"
+          ),
+          "Atracciones": st.column_config.NumberColumn(
+            "Atracciones",
+            width="auto",
+            format="%d",
+            help="Número total de atracciones encontradas"
+          )
+        }
+      )
+    with col2:
+      # Métricas resumen
+      col1, col2, col3 = st.columns(3)
+      total_regions = len(region_configs)
+      scraped_count = len([r for r in scraped_regions_data.values() if r])
+      total_attractions = sum(item.get("attractions_count", 0) for item in scraped_regions_data.values())
+      
+      col1.metric("Total Regiones", total_regions)
+      col2.metric("Scrapeadas", f"{scraped_count}/{total_regions}")
+      col3.metric("Total Atracciones", f"{total_attractions:,}")
+      
+      # Mostrar progreso visual
+      if total_regions > 0:
+        progress_percentage = (scraped_count / total_regions) * 100
+        st.progress(progress_percentage / 100)
+        st.caption(f"Progreso general: {progress_percentage:.1f}% completado")
   else:
     st.info("No hay datos de regiones para mostrar")
 
