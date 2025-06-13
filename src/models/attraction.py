@@ -5,7 +5,7 @@ from typing import Optional
 class Attraction:
   """modelo que representa una atraccion turistica"""
   position: Optional[int] = None # posición en el ranking
-  place_name: str = "Lugar Sin Nombre" # nombre del lugar
+  attraction_name: str = "Lugar Sin Nombre" # nombre del lugar
   place_type: str = "Sin categoría" # tipo de lugar
   rating: float = 0.0 # calificación promedio
   reviews_count: int = 0 # número total de reseñas

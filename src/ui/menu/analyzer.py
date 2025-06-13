@@ -7,6 +7,17 @@ import pandas as pd
 from datetime import datetime, timezone
 import re
 
+AVAILABLE_LANGUAGES = {
+    "all": "Todos los idiomas",
+    "spanish": "Español", 
+    "english": "Inglés",
+    "portuguese": "Portugués",
+    "french": "Francés",
+    "german": "Alemán",
+    "italian": "Italiano",
+    "dutch": "Holandés"
+}
+
 def get_relative_time(iso_date_string: str) -> str:
   """Convierte fecha ISO a tiempo relativo"""
   if not iso_date_string or iso_date_string == "Nunca":
@@ -58,6 +69,24 @@ def get_relative_time(iso_date_string: str) -> str:
   except Exception as e:
     log.warning(f"Error parseando fecha: {e}")
     return "Fecha inválida"
+
+def get_available_languages_from_data(data_handler) -> List[str]:
+    """Obtiene idiomas disponibles dinámicamente desde los datos"""
+    languages_found = set()
+    languages_found.add("all")  # Siempre incluir opción "todos"
+    
+    for region in data_handler.data.get("regions", []):
+        for attraction in region.get("attractions", []):
+            for lang_code in attraction.get("languages", {}).keys():
+                languages_found.add(lang_code)
+    
+    # Ordenar y convertir a lista con nombres legibles
+    available_languages = ["all"]
+    for lang_code in sorted(languages_found):
+        if lang_code != "all" and lang_code in AVAILABLE_LANGUAGES:
+            available_languages.append(lang_code)
+    
+    return available_languages
 
 def render(data_handler):
   """Renderiza página de análisis de sentimientos"""
@@ -157,13 +186,46 @@ def render(data_handler):
       st.rerun()
 
 def display_current_stats(data_handler, region_names_to_show: List[str]):
-  """Muestra estadísticas de reseñas analizadas/no analizadas con fechas relativas"""
+  """Muestra estadísticas de reseñas analizadas/no analizadas con fechas relativas - MULTILENGUAJE"""
+  
+  # ✅ CORREGIDO: Obtener idiomas disponibles dinámicamente
+  available_languages = get_available_languages_from_data(data_handler)
+  
+  if not available_languages or len(available_languages) <= 1:
+      # Si solo hay "all" o está vacío, mostrar todos por defecto
+      display_language = "all"
+      st.markdown("#### Estadísticas Generales")
+      st.info("Mostrando estadísticas de todos los idiomas (no hay idiomas específicos disponibles)")
+  else:
+      # ✅ NUEVO: Selector de idioma para estadísticas
+      st.markdown("#### Estadísticas por Idioma")
+      
+      # Crear opciones legibles para el selectbox
+      language_options = []
+      for lang_code in available_languages:
+          if lang_code in AVAILABLE_LANGUAGES:
+              language_options.append(AVAILABLE_LANGUAGES[lang_code])
+          else:
+              language_options.append(lang_code.title())
+      
+      selected_language_display = st.selectbox(
+          "Seleccionar idioma:",
+          options=language_options,
+          key="stats_language_display_selector"  # ✅ Key única
+      )
+      
+      # Convertir de vuelta a código de idioma
+      display_language = "all"
+      for lang_code, lang_display in AVAILABLE_LANGUAGES.items():
+          if lang_display == selected_language_display:
+              display_language = lang_code
+              break
   
   # Recargar datos frescos antes de mostrar estadísticas
   try:
-    data_handler.reload_data()
+      data_handler.reload_data()
   except Exception as e:
-    log.warning(f"Error recargando datos para estadísticas: {e}")
+      log.warning(f"Error recargando datos para estadísticas: {e}")
   
   stats = []
   all_regions_data = data_handler.data.get("regions", [])
@@ -172,40 +234,139 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
     current_region_name_spanish = region_data_item.get("region_name")
     if not current_region_name_spanish or current_region_name_spanish not in region_names_to_show:
       continue
-            
+    
     analyzed_count = 0
     not_analyzed_count = 0
+    language_breakdown = {}
+    
     for attraction_item in region_data_item.get("attractions", []):
-      for review_item in attraction_item.get("reviews", []):
-        if review_item.get("sentiment"):
-          analyzed_count += 1
-        else:
-          not_analyzed_count += 1
+      # ✅ NUEVO: Procesar estructura multilenguaje
+      if display_language == "all":
+        # Procesar todas las reseñas de todos los idiomas
+        old_reviews = attraction_item.get("reviews", [])  # Compatibilidad con estructura antigua
+        for review_item in old_reviews:
+          if review_item.get("sentiment"):
+            analyzed_count += 1
+          else:
+            not_analyzed_count += 1
+        
+        # Procesar nueva estructura multilenguaje
+        languages_data = attraction_item.get("languages", {})
+        for lang, lang_data in languages_data.items():
+          for review_item in lang_data.get("reviews", []):
+            lang_key = f"{lang}_analyzed" if review_item.get("sentiment") else f"{lang}_pending"
+            language_breakdown[lang_key] = language_breakdown.get(lang_key, 0) + 1
+            
+            if review_item.get("sentiment"):
+              analyzed_count += 1
+            else:
+              not_analyzed_count += 1
+      else:
+        # Procesar solo idioma específico
+        language_data = attraction_item.get("languages", {}).get(display_language, {})
+        for review_item in language_data.get("reviews", []):
+          if review_item.get("sentiment"):
+            analyzed_count += 1
+          else:
+            not_analyzed_count += 1
     
     # Obtener fecha de último análisis y convertir a tiempo relativo
     last_analyzed_date = region_data_item.get("last_analyzed_date", "Nunca")
     relative_time = get_relative_time(last_analyzed_date)
+    
+    # ✅ NUEVO: Información de desglose de idiomas
+    idiomas_info = ""
+    if display_language == "all" and language_breakdown:
+      # Agrupar por idioma
+      lang_summary = {}
+      for key, count in language_breakdown.items():
+        lang = key.replace("_analyzed", "").replace("_pending", "")
+        if lang not in lang_summary:
+          lang_summary[lang] = {"analyzed": 0, "pending": 0}
         
+        if "_analyzed" in key:
+          lang_summary[lang]["analyzed"] = count
+        else:
+          lang_summary[lang]["pending"] = count
+      
+      idiomas_list = []
+      for lang, counts in sorted(lang_summary.items()):
+        total = counts["analyzed"] + counts["pending"]
+        coverage = (counts["analyzed"] / total * 100) if total > 0 else 0
+        idiomas_list.append(f"{lang}: {coverage:.0f}% ({counts['analyzed']}/{total})")
+      
+      idiomas_info = " | ".join(idiomas_list[:3])
+      if len(lang_summary) > 3:
+        idiomas_info += f" (+{len(lang_summary)-3} más)"
+    
     stats.append({
       "Región": current_region_name_spanish,
-      "Reseñas analizadas": analyzed_count,
-      "Reseñas pendientes": not_analyzed_count,
-      "Último análisis": relative_time
+      "Analizadas": analyzed_count,
+      "Pendientes": not_analyzed_count,
+      "Total": analyzed_count + not_analyzed_count,
+      "Cobertura": f"{(analyzed_count / (analyzed_count + not_analyzed_count) * 100):.1f}%" if (analyzed_count + not_analyzed_count) > 0 else "0%",
+      "Último análisis": relative_time,
+      "Idiomas": idiomas_info if display_language == "all" else f"{analyzed_count}/{analyzed_count + not_analyzed_count} en {display_language}"  # ✅ NUEVO
     })
     
   if stats:
-    # Configurar el dataframe con formato mejorado
+    # ✅ NUEVO: Configuración de columnas actualizada
     df = pd.DataFrame(stats)
+    
+    column_config = {
+      "Región": st.column_config.TextColumn("Región", width="medium"),
+      "Analizadas": st.column_config.NumberColumn("Analizadas", width="small"),
+      "Pendientes": st.column_config.NumberColumn("Pendientes", width="small"),
+      "Total": st.column_config.NumberColumn("Total", width="small"),
+      "Cobertura": st.column_config.TextColumn("Cobertura", width="small"),
+      "Último análisis": st.column_config.TextColumn("Último análisis", width="medium"),
+    }
+    
+    if display_language == "all":
+      column_config["Idiomas"] = st.column_config.TextColumn(
+        "Desglose por Idioma", 
+        width="large",
+        help="Cobertura de análisis por idioma"
+      )
+    else:
+      column_config["Idiomas"] = st.column_config.TextColumn(
+        f"Progreso {display_language}", 
+        width="medium",
+        help=f"Progreso de análisis en {display_language}"
+      )
+    
     st.dataframe(
       df,
       use_container_width=True,
-      hide_index=True
+      hide_index=True,
+      column_config=column_config
     )
+    
+    # ✅ NUEVO: Métricas resumen
+    col1, col2, col3, col4 = st.columns(4)
+    total_analyzed = sum(item["Analizadas"] for item in stats)
+    total_pending = sum(item["Pendientes"] for item in stats)
+    total_reviews = total_analyzed + total_pending
+    overall_coverage = (total_analyzed / total_reviews * 100) if total_reviews > 0 else 0
+    
+    col1.metric("Total Reseñas", f"{total_reviews:,}")
+    col2.metric("Analizadas", f"{total_analyzed:,}")
+    col3.metric("Pendientes", f"{total_pending:,}")
+    col4.metric("Cobertura Global", f"{overall_coverage:.1f}%")
+    
+    # ✅ NUEVO: Progreso visual
+    if total_reviews > 0:
+      st.progress(overall_coverage / 100)
+      if display_language == "all":
+        st.caption(f"Progreso general: {overall_coverage:.1f}% de todas las reseñas analizadas")
+      else:
+        st.caption(f"Progreso en {display_language}: {overall_coverage:.1f}% de reseñas analizadas")
+    
   else:
     st.info("No hay datos de análisis disponibles para las regiones seleccionadas")
 
 async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanish: str, progress_callback=None, stop_event=None) -> Tuple[bool, int]:
-  """Analiza una región específica y actualiza data_handler"""
+  """Analiza una región específica y actualiza data_handler - MULTILENGUAJE"""
   reviews_processed_count = 0
   try:
     # Verificar si se debe detener
@@ -220,11 +381,25 @@ async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanis
       log.error(f"Región '{region_name_spanish}' no encontrada")
       return False, 0
 
+    # ✅ NUEVO: Contar reseñas pendientes en estructura multilenguaje
     pending_reviews_in_region = 0
     for attraction in region_data_to_analyze.get("attractions", []):
-      for review in attraction.get("reviews", []):
+      # Compatibilidad con estructura antigua
+      old_reviews = attraction.get("reviews", [])
+      for review in old_reviews:
         if not review.get("sentiment"):
           pending_reviews_in_region += 1
+      
+      # Nueva estructura multilenguaje
+      languages_data = attraction.get("languages", {})
+      for lang, lang_data in languages_data.items():
+        for review in lang_data.get("reviews", []):
+          if not review.get("sentiment"):
+            pending_reviews_in_region += 1
+
+    if pending_reviews_in_region == 0:
+      log.info(f"Región '{region_name_spanish}' no tiene reseñas pendientes")
+      return True, 0
 
     # Crear callback que actualice el progreso de la UI y verifique detención
     def ui_progress_callback(progress_value, status_text):
@@ -236,10 +411,10 @@ async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanis
         progress_callback(progress_value, status_text)
       return True  # Continuar
 
-    # analyzer.analyze_region_reviews con callback de progreso
-    analyzed_region_data_dict = await analyzer.analyze_region_reviews(
+    # ✅ ACTUALIZADO: analyzer.analyze_region_reviews con callback de progreso
+    analyzed_region_data_dict = await analyzer.analyze_region_all_languages_ui(
       region_data_to_analyze, 
-      progress_callback=ui_progress_callback,
+      progress_callback=ui_progress_callback
     )
 
     # Verificar si se detuvo durante el análisis
@@ -257,7 +432,7 @@ async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanis
     # Actualizar fecha de último análisis en la región
     data_handler.update_region_analysis_date(region_name_spanish, current_time)
 
-    # Actualizar datos en data_handler
+    # ✅ ACTUALIZADO: Actualizar datos en data_handler
     data_handler.update_region_attractions(region_name_spanish, analyzed_region_data_dict["attractions"])
     await data_handler.save_data()
     
@@ -270,7 +445,7 @@ async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanis
     return False, reviews_processed_count
 
 async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
-  """Maneja el proceso de análisis con feedback en UI y barra de progreso funcional"""
+  """Maneja el proceso de análisis con feedback en UI y barra de progreso funcional - MULTILENGUAJE"""
   
   # Crear evento de detención
   stop_event = asyncio.Event()
@@ -298,15 +473,24 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
     # Ejecutar verificación de detención en paralelo
     check_task = asyncio.create_task(check_stop_signal())
 
-    # Contar total de reseñas pendientes
+    # ✅ NUEVO: Contar total de reseñas pendientes en estructura multilenguaje
     total_reviews_to_analyze_overall = 0
     for region_name_iter_spanish in regions_to_process_names_spanish:
       region_data_iter = data_handler.get_region_data(region_name_iter_spanish)
       if region_data_iter:
         for attraction_iter in region_data_iter.get("attractions", []):
-          for review_iter in attraction_iter.get("reviews", []):
+          # Compatibilidad con estructura antigua
+          old_reviews = attraction_iter.get("reviews", [])
+          for review_iter in old_reviews:
             if not review_iter.get("sentiment"):
               total_reviews_to_analyze_overall += 1
+          
+          # Nueva estructura multilenguaje
+          languages_data = attraction_iter.get("languages", {})
+          for lang, lang_data in languages_data.items():
+            for review_iter in lang_data.get("reviews", []):
+              if not review_iter.get("sentiment"):
+                total_reviews_to_analyze_overall += 1
         
     if total_reviews_to_analyze_overall == 0:
       st.info("No hay reseñas pendientes de análisis en la selección")
@@ -338,11 +522,12 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
       status_text.text(
         f"Región {current_region_index + 1}/{num_total_regions_to_process}: {region_name}\n"
         f"{region_status}\n"
-        f"Progreso general: {overall_progress:.1%}"
+        f"Progreso general: {overall_progress:.1%}\n"
+        f"Reseñas pendientes: {total_reviews_to_analyze_overall}"  # ✅ NUEVO
       )
     
     try:
-      status_text.text(f"Preparando análisis... {total_reviews_to_analyze_overall} reseñas en total")
+      status_text.text(f"Preparando análisis... {total_reviews_to_analyze_overall} reseñas en total (todos los idiomas)")  # ✅ ACTUALIZADO
       
       for i, current_region_name_spanish in enumerate(regions_to_process_names_spanish):
         # Verificar si se debe detener
@@ -376,16 +561,16 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
       # Progreso final
       progress_bar.progress(1.0)
       
-      # Mensaje final
+      # ✅ ACTUALIZADO: Mensaje final con información multilenguaje
       if stop_event.is_set():
         final_message = (
           f"Análisis DETENIDO por el usuario!\n"
           f"Regiones procesadas: {current_region_index}/{num_total_regions_to_process}\n"
-          f"Total reseñas procesadas: {processed_reviews_count_overall}"
+          f"Total reseñas procesadas (todos los idiomas): {processed_reviews_count_overall}"
         )
         st.warning(final_message)
       else:
-        final_message = f"Análisis completado! Total reseñas procesadas: {processed_reviews_count_overall}"
+        final_message = f"Análisis completado! Total reseñas procesadas (todos los idiomas): {processed_reviews_count_overall}"
         if processed_reviews_count_overall == total_reviews_to_analyze_overall:
           st.success(final_message)
         else:
@@ -425,3 +610,5 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
       regions_to_show = [selected_region_ui]
     
     display_current_stats(data_handler, regions_to_show)
+
+# ...existing code...

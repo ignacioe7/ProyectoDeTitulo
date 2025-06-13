@@ -25,6 +25,7 @@ class SentimentAnalyzer:
   def __init__(self, use_cpu: bool = False):
     self.model_name = "tabularisai/multilingual-sentiment-analysis"
     self.nlp = None
+    self.data_handler = None
 
     try:
       # Detectar dispositivo
@@ -120,14 +121,26 @@ class SentimentAnalyzer:
       log.error(f"Error en analyze_review: {e}")
       return "ERROR", 2.0
 
-  async def analyze_attraction_reviews(self, attraction_data: Dict) -> Dict:
-    """Analiza todas las reseñas no analizadas de una atracción"""
+  async def analyze_attraction_reviews_multilenguage(self, attraction_data: Dict, language: str = "spanish") -> Dict:
+    """Analiza reseñas de una atracción en un idioma específico - ACTUALIZADO MULTILENGUAJE"""
     if self.nlp is None:
       log.warning("Modelo no disponible")
       return attraction_data
     
+    # ✅ NUEVO: Trabajar con estructura multilenguaje
+    if "languages" not in attraction_data:
+      return attraction_data
+    
+    if language not in attraction_data["languages"]:
+      return attraction_data
+    
+    language_data = attraction_data["languages"][language]
+    reviews = language_data.get("reviews", [])
+    
+    if not reviews:
+      return attraction_data
+    
     analyzed_reviews = []
-    reviews = attraction_data.get("reviews", [])
     newly_analyzed = 0
     
     for review in reviews:
@@ -154,66 +167,132 @@ class SentimentAnalyzer:
     
     if newly_analyzed > 0:
       attraction_name = attraction_data.get('attraction_name', 'Atracción')
-      log.info(f"{newly_analyzed} reseñas analizadas para {attraction_name}")
+      log.info(f"{newly_analyzed} reseñas analizadas para {attraction_name} en {language}")
     
-    # Devolver atracción actualizada
+    # ✅ ACTUALIZAR: Estructura multilenguaje
+    updated_attraction = {**attraction_data}
+    updated_attraction["languages"][language]["reviews"] = analyzed_reviews
+    updated_attraction["last_analyzed_date"] = datetime.now(timezone.utc).isoformat()
+    
+    return updated_attraction
+
+  def analyze_region_reviews(self, data_handler, region_name: str, language: str = "spanish") -> Dict:
+    """Analiza reseñas de una región específica - CORREGIDO"""
+    
+    log.info(f"Iniciando análisis para región: {region_name}, idioma: {language}")
+    
+    # ✅ CORREGIDO: Obtener datos de la región desde data_handler
+    region_data = data_handler.get_region_data(region_name)
+    if not region_data:
+      log.error(f"Región '{region_name}' no encontrada")
+      return {"total_reviews": 0, "analyzed_reviews": 0}
+    
+    attractions = region_data.get("attractions", [])
+    log.info(f"Atracciones encontradas: {len(attractions)}")
+    
+    all_reviews = []
+    processed_attractions = 0
+    total_analyzed = 0
+    
+    for attraction in attractions:
+      try:
+        # ✅ CORREGIDO: Trabajar con estructura multilenguage
+        languages_data = attraction.get("languages", {})
+        
+        if language not in languages_data:
+          log.debug(f"Atracción '{attraction.get('attraction_name', 'Sin nombre')}': no tiene reseñas en {language}")
+          continue
+        
+        reviews = languages_data[language].get("reviews", [])
+        
+        if reviews:
+          log.debug(f"Atracción '{attraction.get('attraction_name', 'Sin nombre')}': {len(reviews)} reseñas en {language}")
+          all_reviews.extend(reviews)
+          processed_attractions += 1
+          
+          # Contar reseñas ya analizadas
+          analyzed_count = sum(1 for r in reviews if r.get("sentiment") and r.get("sentiment_score") is not None)
+          total_analyzed += analyzed_count
+        else:
+          log.debug(f"Atracción '{attraction.get('attraction_name', 'Sin nombre')}': 0 reseñas en {language}")
+          
+      except Exception as e:
+        log.error(f"Error procesando atracción {attraction.get('attraction_name', 'Sin nombre')}: {e}")
+        continue
+    
+    log.info(f"Total reseñas encontradas: {len(all_reviews)} de {processed_attractions} atracciones")
+    log.info(f"Reseñas ya analizadas: {total_analyzed}")
+    
+    if not all_reviews:
+      log.warning(f"No se encontraron reseñas en {language} para la región {region_name}")
+      return {
+        'total_reviews': 0,
+        'analyzed_reviews': 0,
+        'sentiment_distribution': {'POSITIVE': 0, 'NEUTRAL': 0, 'NEGATIVE': 0},
+        'processed_attractions': 0
+      }
+    
+    # ✅ NUEVO: Obtener estadísticas de sentimientos
+    stats = self.get_sentiment_stats(all_reviews)
+    
     return {
-      **attraction_data,
-      "reviews": analyzed_reviews,
-      "last_analyzed_date": datetime.now(timezone.utc).isoformat()
+      'total_reviews': len(all_reviews),
+      'analyzed_reviews': stats["analyzed_reviews"],
+      'sentiment_distribution': stats["sentiment_distribution"],
+      'average_sentiment': stats["average_sentiment"],
+      'processed_attractions': processed_attractions
     }
 
-  async def analyze_region_reviews(
-    self, 
-    region_data: Dict, 
-    progress_callback: Optional[callable] = None
-  ) -> Dict:
-    """Analiza todas las reseñas de todas las atracciones en una región"""
-    if self.nlp is None:
-      log.error("Modelo no disponible")
-      if progress_callback:
-        progress_callback(1.0, "Modelo no disponible")
-      return region_data
-        
-    attractions = region_data.get("attractions", [])
-    total_attractions = len(attractions)
-    region_name = region_data.get('region_name', 'Región')
+  async def analyze_and_save_region(self, data_handler, region_name: str, language: str = "spanish") -> Dict:
+    """Analiza todas las reseñas de una región y guarda los resultados"""
     
-    if total_attractions == 0:
-      log.info(f"Sin atracciones en {region_name}")
-      if progress_callback:
-        progress_callback(1.0, "Sin atracciones")
-      return {
-        **region_data,
-        "last_analyzed_date": datetime.now(timezone.utc).isoformat()
-      }
-
-    analyzed_attractions = []
+    log.info(f"Iniciando análisis completo para región: {region_name}, idioma: {language}")
+    
+    region_data = data_handler.get_region_data(region_name)
+    if not region_data:
+      return {"error": f"Región '{region_name}' no encontrada"}
+    
+    attractions = region_data.get("attractions", [])
+    total_newly_analyzed = 0
+    processed_attractions = 0
     
     for i, attraction in enumerate(attractions):
-      attraction_name = attraction.get("attraction_name", f"Atracción #{i+1}")
-      
-      # Analizar atracción
-      analyzed_attraction = await self.analyze_attraction_reviews(attraction)
-      analyzed_attractions.append(analyzed_attraction)
-      
-      # Actualizar progreso
-      if progress_callback:
-        progress = (i + 1) / total_attractions
-        status = f"{attraction_name} ({i+1}/{total_attractions})"
-        progress_callback(progress, status)
+      try:
+        attraction_name = attraction.get("attraction_name", f"Atracción {i+1}")
+        log.debug(f"Procesando atracción {i+1}/{len(attractions)}: {attraction_name}")
+        
+        # Analizar reseñas de la atracción
+        updated_attraction = await self.analyze_attraction_reviews_multilenguage(attraction, language)
+        
+        # Contar nuevas reseñas analizadas
+        if language in updated_attraction.get("languages", {}):
+          reviews = updated_attraction["languages"][language].get("reviews", [])
+          newly_analyzed = sum(1 for r in reviews if r.get("analyzed_at") and 
+                             r["analyzed_at"].startswith(datetime.now().strftime("%Y-%m-%d")))
+          total_newly_analyzed += newly_analyzed
+          processed_attractions += 1
+          
+          # Actualizar la atracción en la región
+          attractions[i] = updated_attraction
+        
+      except Exception as e:
+        log.error(f"Error analizando atracción {attraction.get('attraction_name', 'Sin nombre')}: {e}")
+        continue
     
-    log.info(f"Análisis completado para {region_name}")
+    # Guardar cambios
+    try:
+      await data_handler.save_data()
+      log.info(f"Análisis completado: {total_newly_analyzed} nuevas reseñas analizadas en {processed_attractions} atracciones")
+    except Exception as e:
+      log.error(f"Error guardando datos: {e}")
     
-    if progress_callback:
-      progress_callback(1.0, f"{region_name} completado")
-
     return {
-      **region_data,
-      "attractions": analyzed_attractions,
-      "last_analyzed_date": datetime.now(timezone.utc).isoformat()
+      'total_newly_analyzed': total_newly_analyzed,
+      'processed_attractions': processed_attractions,
+      'region_name': region_name,
+      'language': language
     }
-
+      
   def get_sentiment_stats(self, reviews: List[Dict]) -> Dict:
     """Obtiene estadísticas de sentimientos de reseñas"""
     if not reviews:
@@ -251,3 +330,127 @@ class SentimentAnalyzer:
       "average_sentiment": round(average_score, 2),
       "sentiment_counts": sentiment_counts
     }
+  
+  async def analyze_region_reviews_ui(self, region_data: Dict, progress_callback=None, language: str = "spanish") -> Dict:
+      """Analiza reseñas de una región específica - VERSIÓN PARA UI CON CALLBACK"""
+      
+      region_name = region_data.get("region_name", "Región desconocida")
+      log.info(f"Iniciando análisis UI para región: {region_name}, idioma: {language}")
+      
+      attractions = region_data.get("attractions", [])
+      log.info(f"Atracciones encontradas: {len(attractions)}")
+      
+      total_attractions = len(attractions)
+      processed_attractions = 0
+      total_newly_analyzed = 0
+      
+      for i, attraction in enumerate(attractions):
+          try:
+              # ✅ CALLBACK: Actualizar progreso si se proporciona
+              if progress_callback:
+                  progress = i / total_attractions if total_attractions > 0 else 0
+                  attraction_name = attraction.get('attraction_name', f'Atracción {i+1}')
+                  status = f"Analizando: {attraction_name} ({i+1}/{total_attractions})"
+                  
+                  # Verificar si el callback retorna False (señal de detención)
+                  should_continue = progress_callback(progress, status)
+                  if should_continue is False:
+                      log.info(f"Análisis detenido por callback en atracción {i+1}")
+                      break
+              
+              # ✅ CORREGIDO: Trabajar con estructura multilenguaje
+              languages_data = attraction.get("languages", {})
+              
+              if language not in languages_data:
+                  log.debug(f"Atracción '{attraction.get('attraction_name', 'Sin nombre')}': no tiene reseñas en {language}")
+                  continue
+              
+              # Analizar reseñas de la atracción para el idioma específico
+              updated_attraction = await self.analyze_attraction_reviews_multilenguage(attraction, language)
+              
+              # Contar nuevas reseñas analizadas
+              if language in updated_attraction.get("languages", {}):
+                  reviews = updated_attraction["languages"][language].get("reviews", [])
+                  newly_analyzed_today = sum(1 for r in reviews if r.get("analyzed_at") and 
+                                           r["analyzed_at"].startswith(datetime.now().strftime("%Y-%m-%d")))
+                  total_newly_analyzed += newly_analyzed_today
+                  processed_attractions += 1
+                  
+                  # Actualizar la atracción en la región
+                  attractions[i] = updated_attraction
+                  
+                  if newly_analyzed_today > 0:
+                      log.debug(f"Atracción '{attraction.get('attraction_name', 'Sin nombre')}': {newly_analyzed_today} nuevas reseñas analizadas")
+              
+          except Exception as e:
+              log.error(f"Error analizando atracción {attraction.get('attraction_name', 'Sin nombre')}: {e}")
+              continue
+      
+      # ✅ CALLBACK: Progreso final
+      if progress_callback:
+          progress_callback(1.0, f"Completado: {total_newly_analyzed} reseñas analizadas")
+      
+      log.info(f"Análisis completado para {region_name}: {total_newly_analyzed} nuevas reseñas analizadas en {processed_attractions} atracciones")
+      
+      # ✅ RETORNAR: Región actualizada con las atracciones modificadas
+      updated_region = {**region_data}
+      updated_region["attractions"] = attractions
+      updated_region["last_analyzed_date"] = datetime.now(timezone.utc).isoformat()
+      
+      return updated_region
+  
+  async def analyze_region_all_languages_ui(self, region_data: Dict, progress_callback=None) -> Dict:
+      """Analiza reseñas de una región en TODOS los idiomas disponibles - VERSIÓN PARA UI"""
+      
+      region_name = region_data.get("region_name", "Región desconocida")
+      log.info(f"Iniciando análisis multilenguaje UI para región: {region_name}")
+      
+      # ✅ NUEVO: Encontrar todos los idiomas disponibles en la región
+      available_languages = set()
+      for attraction in region_data.get("attractions", []):
+          for lang_code in attraction.get("languages", {}).keys():
+              available_languages.add(lang_code)
+      
+      if not available_languages:
+          log.warning(f"No se encontraron idiomas en la región {region_name}")
+          return region_data
+      
+      log.info(f"Idiomas encontrados: {sorted(available_languages)}")
+      
+      # ✅ PROCESAR: Cada idioma secuencialmente
+      updated_region = {**region_data}
+      total_newly_analyzed = 0
+      
+      for i, language in enumerate(sorted(available_languages)):
+          try:
+              # ✅ CALLBACK: Progreso por idioma
+              if progress_callback:
+                  lang_progress = i / len(available_languages)
+                  status = f"Procesando idioma: {language} ({i+1}/{len(available_languages)})"
+                  should_continue = progress_callback(lang_progress, status)
+                  if should_continue is False:
+                      log.info(f"Análisis detenido en idioma {language}")
+                      break
+              
+              # Analizar idioma específico usando el método UI
+              result = await self.analyze_region_reviews_ui(updated_region, progress_callback, language)
+              updated_region = result
+              
+              # Contar nuevas reseñas analizadas en este idioma
+              for attraction in updated_region.get("attractions", []):
+                  if language in attraction.get("languages", {}):
+                      reviews = attraction["languages"][language].get("reviews", [])
+                      newly_analyzed_today = sum(1 for r in reviews if r.get("analyzed_at") and 
+                                               r["analyzed_at"].startswith(datetime.now().strftime("%Y-%m-%d")))
+                      total_newly_analyzed += newly_analyzed_today
+              
+          except Exception as e:
+              log.error(f"Error analizando idioma {language}: {e}")
+              continue
+      
+      # ✅ CALLBACK: Progreso final
+      if progress_callback:
+          progress_callback(1.0, f"Análisis multilenguaje completado: {total_newly_analyzed} reseñas")
+      
+      log.info(f"Análisis multilenguaje completado para {region_name}: {total_newly_analyzed} reseñas en {len(available_languages)} idiomas")
+      return updated_region

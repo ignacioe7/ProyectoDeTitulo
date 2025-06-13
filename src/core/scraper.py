@@ -44,7 +44,7 @@ class AttractionScraper:
     return None
 
   async def scrape_page(self, url: str) -> List[Dict]:
-    """Scrapea una página de atracciones"""
+    """Scrapea una página de atracciones con selectores corregidos"""
     html_content = await self.get_page_html(url)
     if not html_content:
       log.error(f"Sin HTML para {url}")
@@ -54,84 +54,120 @@ class AttractionScraper:
       selector = Selector(html_content)
       attractions = []
       
-      # Iterar sobre tarjetas de atracciones
-      for card in selector.xpath('//article[contains(@class, "GTuVU")]'):
+      # ✅ CORREGIDO: Selector específico para artículos
+      cards = selector.xpath('//article[contains(@class, "GTuVU")]')
+      
+      if not cards:
+        log.warning(f"No se encontraron tarjetas de atracciones en {url}")
+        return []
+      
+      log.debug(f"Encontradas {len(cards)} tarjetas en {url}")
+      
+      for idx, card in enumerate(cards):
         try:
           attraction_data = {
             "position": None,
-            "place_name": "Lugar Desconocido",
-            "place_type": "Sin Categoría",
+            "attraction_name": "Lugar Desconocido",
+            "place_type": "Sin Categoría", 
             "rating": 0.0,
             "reviews_count": 0,
             "url": "",
-            "previously_scraped": False
           }
           
-          # Extraer URL
+          # ✅ CORREGIDO: URL (líneas 11 y 27 del HTML)
           href = card.xpath('.//a[contains(@href, "/Attraction_Review-")]/@href').get()
-          if href:
-            attraction_data["url"] = f"{BASE_URL}{href.split('#')[0]}"
+          if not href:
+            log.debug(f"Tarjeta {idx+1}: Sin URL válida")
+            continue
+            
+          clean_href = href.split('#')[0].split('?')[0]
+          attraction_data["url"] = f"https://www.tripadvisor.com{clean_href}" if not clean_href.startswith('http') else clean_href
           
-          # Extraer nombre y posición
-          name_div = card.xpath('.//div[contains(@class, "XfVdV") and contains(@class, "AIbhI")]')
-          if name_div:
-            name_text = name_div.xpath('string(.)').get("").strip()
-            if '.' in name_text:
-              parts = name_text.split('.', 1)
-              try: 
-                attraction_data["position"] = int(parts[0].strip())
-              except (ValueError, IndexError): 
-                pass
-              attraction_data["place_name"] = parts[1].strip() if len(parts) > 1 else ""
-            else:
-              attraction_data["place_name"] = name_text
+          # ✅ CORREGIDO: Nombre y posición (línea 32)
+          name_element = card.xpath('.//div[contains(@class, "XfVdV") and contains(@class, "AIbhI")]')
+          if name_element:
+            full_text = name_element.xpath('string(.)').get("").strip()
+            log.debug(f"Texto completo extraído: '{full_text}'")
+            
+            if full_text:
+              # Separar número de posición del nombre
+              if '.' in full_text:
+                parts = full_text.split('.', 1)
+                try:
+                  position_text = parts[0].strip()
+                  if position_text.isdigit():
+                    attraction_data["position"] = int(position_text)
+                    attraction_data["attraction_name"] = parts[1].strip() if len(parts) > 1 else full_text
+                  else:
+                    attraction_data["attraction_name"] = full_text
+                except (ValueError, IndexError):
+                  attraction_data["attraction_name"] = full_text
+              else:
+                attraction_data["attraction_name"] = full_text
           
-          # Extraer rating
-          rating_div = card.xpath('.//div[contains(@class, "MyMKp")]//div[contains(@class, "biGQs") and contains(@class, "_P") and contains(@class, "hmDzD")]')
-          if rating_div:
-            rating_text = rating_div.xpath('text()').get()
-            if rating_text and '.' in rating_text:
-              try: 
-                attraction_data["rating"] = float(rating_text.strip())
-              except ValueError: 
-                pass
+          # ✅ CORREGIDO: Rating (línea 41)
+          rating_element = card.xpath('.//div[@data-automation="bubbleRatingValue"]')
+          if rating_element:
+            rating_text = rating_element.xpath('text()').get()
+            if rating_text:
+              try:
+                rating_value = float(rating_text.strip())
+                if 0 <= rating_value <= 5:
+                  attraction_data["rating"] = rating_value
+                  log.debug(f"Rating extraído: {rating_value}")
+              except ValueError:
+                log.debug(f"Error parsing rating: {rating_text}")
           
-          # Extraer número de reseñas
-          reviews_xpath_primary = './/a[contains(@class, "BMQDV")]//div[@class="f Q2"]/div[contains(@class, "biGQs") and contains(@class, "_P") and contains(@class, "hmDzD")][last()]'
-          reviews_xpath_alternative = './/div[contains(@class, "Q2")]//div[contains(@class, "biGQs") and contains(@class, "_P") and contains(@class, "hmDzD")][last()]'
-          reviews_div = card.xpath(reviews_xpath_primary)
-          if not reviews_div: 
-            reviews_div = card.xpath(reviews_xpath_alternative)
-          
-          if reviews_div:
-            reviews_text = reviews_div.xpath('text()').get()
+          # ✅ CORREGIDO: Número de reseñas (línea 48)
+          reviews_element = card.xpath('.//div[@data-automation="bubbleLabel"]')
+          if reviews_element:
+            reviews_text = reviews_element.xpath('text()').get()
             if reviews_text:
-              cleaned_text = reviews_text.strip().replace('.', '').replace(',', '')
-              if cleaned_text.isdigit():
-                try: 
-                  attraction_data["reviews_count"] = int(cleaned_text)
-                except ValueError: 
-                  pass
+              # Limpiar texto y extraer número
+              cleaned_text = reviews_text.strip().replace(',', '').replace('.', '')
+              log.debug(f"Texto de reseñas extraído: '{reviews_text}' -> '{cleaned_text}'")
+              
+              try:
+                reviews_count = int(cleaned_text)
+                if reviews_count >= 0:
+                  attraction_data["reviews_count"] = reviews_count
+                  log.debug(f"Reseñas extraídas: {reviews_count}")
+              except ValueError:
+                log.debug(f"Error parsing reviews count: {reviews_text}")
           
-          # Extraer tipo de lugar
-          type_section = card.xpath('.//div[contains(@class, "dxkoL")]')
-          if type_section:
-            type_div = type_section.xpath('.//div[contains(@class, "biGQs") and contains(@class, "_P") and contains(@class, "hmDzD")][1]')
-            if type_div:
-              type_text = type_div.xpath('text()').get()
-              if type_text and not any(c.isdigit() for c in type_text) and '.' not in type_text:
-                attraction_data["place_type"] = type_text.strip()
+          # ✅ CORREGIDO: Tipo de lugar (línea 62)
+          type_element = card.xpath('.//div[contains(@class, "dxkoL")]//div[contains(@class, "biGQs") and contains(@class, "hmDzD")]')
+          if type_element:
+            type_text = type_element.xpath('text()').get()
+            if type_text and type_text.strip():
+              # Limpiar HTML entities
+              clean_type = type_text.strip().replace('&amp;', '&')
+              # Validar que no sea rating o número
+              if not any(c.isdigit() for c in clean_type) and '.' not in clean_type:
+                attraction_data["place_type"] = clean_type
+                log.debug(f"Tipo extraído: {clean_type}")
           
-          attractions.append(attraction_data)
+          # ✅ VALIDACIÓN: Solo agregar si tiene datos básicos válidos
+          if (attraction_data["url"] and 
+              attraction_data["attraction_name"] != "Lugar Desconocido" and
+              len(attraction_data["attraction_name"]) > 2):
+            
+            attractions.append(attraction_data)
+            log.info(f"✅ Atracción extraída: {attraction_data['attraction_name']} "
+                     f"(pos: {attraction_data['position']}, rating: {attraction_data['rating']}, "
+                     f"reseñas: {attraction_data['reviews_count']}, tipo: {attraction_data['place_type']})")
+          else:
+            log.warning(f"❌ Tarjeta {idx+1}: Datos insuficientes - {attraction_data}")
           
         except Exception as e:
-          log.warning(f"Error extrayendo tarjeta: {e}")
+          log.error(f"Error extrayendo tarjeta {idx+1}: {e}")
           continue
       
+      log.info(f"Extraídas {len(attractions)} atracciones válidas de {len(cards)} tarjetas")
       return attractions
       
-    except Exception:
-      log.error(f"Error scrapeando {url}")
+    except Exception as e:
+      log.error(f"Error scrapeando {url}: {e}")
       return []
 
   async def get_next_page_url(self, response_text: str) -> Optional[str]:
@@ -184,17 +220,19 @@ class ReviewScraper:
                max_concurrency: int = 3,
                json_output_filepath: Optional[str] = None,
                stop_event: Optional[asyncio.Event] = None,
-               inter_attraction_base_delay: float = 10.0):
+               inter_attraction_base_delay: float = 10.0,
+               target_language: str = "english"):
     self.client = None
     self.max_retries = max_retries
     self.max_concurrency = max(1, min(3, max_concurrency))
     self.parser = ReviewParser()
     self.config = ReviewParserConfig()
     self.problematic_urls: List[str] = []
-    
+    self.target_language = target_language
+  
     # Semáforo para controlar concurrencia
     self.concurrency_semaphore = asyncio.Semaphore(self.max_concurrency)
-    
+  
     self.json_output_filepath = json_output_filepath
     self.stop_event = stop_event if stop_event is not None else asyncio.Event()
     self.inter_attraction_base_delay = inter_attraction_base_delay
@@ -218,15 +256,19 @@ class ReviewScraper:
   async def scrape_multiple_attractions(self, 
                                        attractions_data_list: List[Dict], 
                                        region_name: str,
+                                       target_language: str = "english",
                                        attraction_callback=None,
                                        stop_event=None) -> List[Dict]:
-    """Scrapea múltiples atracciones con clasificación por prioridad"""
+    """Scrapea múltiples atracciones con clasificación por prioridad y soporte multilenguaje"""
     
     if stop_event:
       self.stop_event = stop_event
     
+    # Usar idioma especificado
+    self.target_language = target_language
+    
     DEFER_THRESHOLD = 10
-    log.info(f"Clasificando {len(attractions_data_list)} atracciones en {region_name}")
+    log.info(f"Clasificando {len(attractions_data_list)} atracciones en {region_name} para idioma: {self.target_language}")
     
     # Listas de prioridad
     p1_newly_scraped: List[Dict] = []
@@ -234,49 +276,58 @@ class ReviewScraper:
     p3_few_missing: List[Dict] = []
     p4_up_to_date: List[Dict] = []
     p5_zero_zero_scraped: List[Dict] = []
-
-    # Clasificación por prioridad
+  
+    # Clasificación por prioridad con estructura multilenguaje
     for att_data in attractions_data_list:
       attraction_name_for_log = att_data.get("attraction_name", "Atracción Desconocida")
-
+  
       if self.stop_event.is_set():
         log.info(f"Clasificación detenida para {attraction_name_for_log}")
         continue
-
+  
       if not att_data.get("url"):
         log.warning(f"Sin URL para {attraction_name_for_log}")
         continue
       
-      # Ignorar atracciones sin reseñas
+      # ✅ NUEVO: Ignorar atracciones sin reseñas y marcarlas como previamente scrapeadas
       if att_data.get("reviews_count", 0) == 0:
         log.debug(f"Sin reseñas: {attraction_name_for_log}")
+        att_data["previously_scraped"] = True
         continue
       
-      current_scraped_reviews_in_json = len(att_data.get("reviews", []))
-      stored_json_english_count = att_data.get("english_reviews_count", 0)
+      # ✅ NUEVO: Obtener datos específicos del idioma objetivo
+      language_data = att_data.get("languages", {}).get(self.target_language, {})
+      current_scraped_reviews = len(language_data.get("reviews", []))
+      stored_language_count = language_data.get("reviews_count", 0)
       
-      att_data_for_priority = att_data
+      att_data_for_priority = att_data.copy()
       
       # Caso inconsistencia: más scrapeadas que las esperadas
-      if stored_json_english_count < current_scraped_reviews_in_json:
+      if stored_language_count < current_scraped_reviews:
         log.warning(f"Inconsistencia en {attraction_name_for_log}: corrigiendo conteo")
-        att_data_for_priority = att_data.copy()
-        att_data_for_priority["english_reviews_count"] = current_scraped_reviews_in_json
-        att_data_for_priority["previously_scraped"] = True
-
-      effective_english_count = att_data_for_priority.get("english_reviews_count", 0)
-      is_previously_scraped = att_data_for_priority.get("previously_scraped", False)
-
+        if "languages" not in att_data_for_priority:
+          att_data_for_priority["languages"] = {}
+        if self.target_language not in att_data_for_priority["languages"]:
+          att_data_for_priority["languages"][self.target_language] = {}
+        
+        att_data_for_priority["languages"][self.target_language].update({
+          "reviews_count": current_scraped_reviews,
+          "previously_scraped": True
+        })
+  
+      effective_language_count = att_data_for_priority.get("languages", {}).get(self.target_language, {}).get("reviews_count", 0)
+      is_previously_scraped = att_data_for_priority.get("languages", {}).get(self.target_language, {}).get("previously_scraped", False)
+  
       # Asignar prioridad
       if not is_previously_scraped:
         log.debug(f"P1 nueva: {attraction_name_for_log}")
         p1_newly_scraped.append(att_data_for_priority)
       else:
-        if effective_english_count == 0 and current_scraped_reviews_in_json == 0:
+        if effective_language_count == 0 and current_scraped_reviews == 0:
           log.debug(f"P5 cero/cero: {attraction_name_for_log}")
           p5_zero_zero_scraped.append(att_data_for_priority)
         else:
-          missing_reviews = effective_english_count - current_scraped_reviews_in_json
+          missing_reviews = effective_language_count - current_scraped_reviews
           if missing_reviews > DEFER_THRESHOLD:
             log.debug(f"P2 muchas faltantes: {attraction_name_for_log}")
             p2_many_missing.append(att_data_for_priority)
@@ -286,7 +337,7 @@ class ReviewScraper:
           else:
             log.debug(f"P4 actualizada: {attraction_name_for_log}")
             p4_up_to_date.append(att_data_for_priority)
-
+  
     # Combinar listas por prioridad
     ordered_attractions_to_scrape = (
       p1_newly_scraped + 
@@ -295,10 +346,10 @@ class ReviewScraper:
       p4_up_to_date + 
       p5_zero_zero_scraped
     )
-
-    log.info(f"Clasificación completa: P1={len(p1_newly_scraped)} P2={len(p2_many_missing)} "
+  
+    log.info(f"Clasificación completa para {self.target_language}: P1={len(p1_newly_scraped)} P2={len(p2_many_missing)} "
              f"P3={len(p3_few_missing)} P4={len(p4_up_to_date)} P5={len(p5_zero_zero_scraped)}")
-
+  
     return await self._process_attractions_concurrently(
       ordered_attractions_to_scrape, 
       region_name, 
@@ -384,78 +435,111 @@ class ReviewScraper:
 
   # Métodos principales
   async def scrape_reviews(self, attraction_data: Dict, region_name: str) -> Dict:
-    """Scrapea reseñas para una atracción específica"""
+    """Scrapea reseñas para una atracción específica en el idioma objetivo"""
     attraction_name_val = attraction_data.get("attraction_name", "Atracción Desconocida")
     attraction_url = attraction_data.get("url")
     
-    stored_english_count = attraction_data.get("english_reviews_count", 0)
-    stored_reviews_from_json = attraction_data.get("reviews", [])
-
-    log.debug(f"Scraping reseñas: {attraction_name_val}")
-
+    # ✅ CORREGIDO: Obtener datos específicos del idioma
+    language_data = attraction_data.get("languages", {}).get(self.target_language, {})
+    stored_language_count = language_data.get("reviews_count", 0)
+    stored_reviews_from_json = language_data.get("reviews", [])
+  
+    log.debug(f"Scraping reseñas en {self.target_language}: {attraction_name_val}")
+  
     if not attraction_url:
       log.error(f"Sin URL: {attraction_name_val}")
       return self._build_error_response(attraction_data, "missing_url", "URL no disponible")
-
-    # Obtener métricas del sitio
-    site_metrics = await self._get_review_metrics(attraction_url)
-    current_site_english_reviews = site_metrics.get("english_reviews", 0)
-    log.debug(f"Métricas sitio {attraction_name_val}: English={current_site_english_reviews}")
-
+  
+    # ✅ NUEVO: Generar URL para el idioma específico
+    language_url = ReviewMetricsCalculator.generate_language_url(attraction_url, self.target_language)
+    
+    # ✅ NUEVO: Obtener métricas específicas del idioma
+    site_metrics = await self._get_review_metrics_for_language(language_url)
+    current_site_language_reviews = site_metrics.get("total_reviews", 0)
+    is_correct_language_view = site_metrics.get("is_correct_language_view", False)
+    
+    log.debug(f"Métricas sitio {attraction_name_val} ({self.target_language}): Total={current_site_language_reviews}, Vista correcta={is_correct_language_view}")
+  
+    # ✅ NUEVO: Validar que estamos en la vista del idioma correcto
+    if not is_correct_language_view:
+      log.warning(f"Vista de idioma incorrecta para {attraction_name_val}: esperado {self.target_language}")
+      return self._build_error_response(attraction_data, "incorrect_language_view", f"Vista de idioma incorrecta: esperado {self.target_language}")
+  
     if self.stop_event.is_set():
       log.info(f"Detenido por usuario: {attraction_name_val}")
       return self._build_error_response(attraction_data, "stopped_by_user_before_processing", "detenido")
-
-    # Sin reseñas en inglés
-    if current_site_english_reviews == 0:
-      log.debug(f"Sin reseñas en inglés: {attraction_name_val}")
+  
+    # Sin reseñas en el idioma objetivo
+    if current_site_language_reviews == 0:
+      log.debug(f"Sin reseñas en {self.target_language}: {attraction_name_val}")
       if self.json_output_filepath:
         await self._save_reviews_to_json_incrementally_internal(
           region_name_to_update=region_name,
           attraction_url=attraction_url,
           new_reviews_data=[],
-          site_english_count=0,
+          site_language_count=0,
+          language_code=self.target_language,
           attraction_name_if_new=attraction_name_val
         )
       return {
         "attraction_name": attraction_name_val,
         "url": attraction_url,
         "newly_scraped_reviews": [],
-        "current_site_english_reviews_count": 0,
-        "scrape_status": "no_english_reviews_on_site"
+        "current_site_language_reviews_count": 0,
+        "language": self.target_language,
+        "scrape_status": f"no_{self.target_language}_reviews_on_site"
       }
+  
+    # ✅ NUEVO: Generar hashes únicos globales para evitar duplicados entre idiomas
+    all_existing_review_ids = set()
+    all_existing_reviews = []
+    for lang, lang_data in attraction_data.get("languages", {}).items():
+        for review in lang_data.get("reviews", []):
+            if isinstance(review, dict):
+                all_existing_reviews.append(review)
+                review_id = review.get("review_id", "").strip()
+                if review_id and review_id != "":
+                    all_existing_review_ids.add(review_id)
+    
+    processed_review_hashes: Set[int] = {self._generate_review_hash(r) for r in all_existing_reviews if isinstance(r, dict)}
 
-    processed_review_hashes: Set[int] = {self._generate_review_hash(r) for r in stored_reviews_from_json if isinstance(r, dict)}
+    # ✅ NUEVO: Sets para tracking de la sesión completa de scraping
+    session_processed_review_ids = set(all_existing_review_ids)  # Empezar con los existentes
+    session_processed_hashes = set(processed_review_hashes)
     
     # Ya está actualizada
-    if current_site_english_reviews == stored_english_count and len(processed_review_hashes) >= current_site_english_reviews:
+    if current_site_language_reviews == stored_language_count and len(stored_reviews_from_json) >= current_site_language_reviews:
       log.debug(f"Ya actualizada: {attraction_name_val}")
       if self.json_output_filepath:
         await self._save_reviews_to_json_incrementally_internal(
           region_name_to_update=region_name,
           attraction_url=attraction_url,
           new_reviews_data=[],
-          site_english_count=current_site_english_reviews,
+          site_language_count=current_site_language_reviews,
+          language_code=self.target_language,
           attraction_name_if_new=attraction_name_val
         )
       return {
         "attraction_name": attraction_name_val,
         "url": attraction_url,
         "newly_scraped_reviews": [],
-        "current_site_english_reviews_count": current_site_english_reviews,
+        "current_site_language_reviews_count": current_site_language_reviews,
+        "language": self.target_language,
         "scrape_status": "no_action_needed_up_to_date"
       }
-
+  
     # Proceso de scraping en 3 fases
     all_reviews_scraped_this_run_accumulator: List[Dict] = []
     processed_pages_this_run: Set[int] = set()
     scrape_status_parts: List[str] = []
     
     initial_scraped_count = len(stored_reviews_from_json)
-    initial_english_count = stored_english_count
+    # ✅ CORREGIDO: Usar datos del idioma específico
+    initial_language_count = stored_language_count
     
     # FASE 1: Reseñas nuevas
-    expected_new_reviews = current_site_english_reviews - initial_english_count
+    # ✅ CORREGIDO: Usar variables del idioma específico
+    expected_new_reviews = current_site_language_reviews - initial_language_count
     if expected_new_reviews > 0:
       num_pages_for_new = (expected_new_reviews + self.REVIEWS_PER_PAGE - 1) // self.REVIEWS_PER_PAGE
       log.debug(f"Fase 1 {attraction_name_val}: {expected_new_reviews} nuevas esperadas")
@@ -465,7 +549,8 @@ class ReviewScraper:
           scrape_status_parts.append("stopped_during_new_reviews")
           break
           
-        page_url = self._build_page_url(attraction_url, page_num)
+        # ✅ CORREGIDO: Usar URL del idioma específico
+        page_url = self._build_page_url(language_url, page_num)
         reviews_on_page = await self._scrape_single_page_with_retries(page_url, attraction_name_val)
         processed_pages_this_run.add(page_num)
         
@@ -474,18 +559,34 @@ class ReviewScraper:
           
         newly_found_on_this_page_list: List[Dict] = []
         for review in reviews_on_page:
-          review_hash = self._generate_review_hash(review)
-          if review_hash not in processed_review_hashes:
-            newly_found_on_this_page_list.append(review)
-            all_reviews_scraped_this_run_accumulator.append(review)
-            processed_review_hashes.add(review_hash)
+            review_id = review.get("review_id", "").strip()
+            is_duplicate = False
+            
+            if review_id and review_id != "":
+                # ✅ Comparar contra todas las reseñas: JSON + sesión actual
+                if review_id in session_processed_review_ids:
+                    is_duplicate = True
+                else:
+                    session_processed_review_ids.add(review_id)
+            else:
+                # ✅ Fallback: comparar por hash
+                review_hash = self._generate_review_hash(review)
+                if review_hash in session_processed_hashes:
+                    is_duplicate = True
+                else:
+                    session_processed_hashes.add(review_hash)
+            
+            if not is_duplicate:
+                newly_found_on_this_page_list.append(review)
+                all_reviews_scraped_this_run_accumulator.append(review)
         
         if newly_found_on_this_page_list and self.json_output_filepath:
           await self._save_reviews_to_json_incrementally_internal(
             region_name_to_update=region_name,
             attraction_url=attraction_url,
             new_reviews_data=newly_found_on_this_page_list,
-            site_english_count=current_site_english_reviews,
+            site_language_count=current_site_language_reviews,
+            language_code=self.target_language,
             attraction_name_if_new=attraction_name_val
           )
         
@@ -500,13 +601,15 @@ class ReviewScraper:
       scrape_status_parts.append("no_new_reviews_expected")
     
     updated_scraped_count = initial_scraped_count + len(all_reviews_scraped_this_run_accumulator)
-    updated_english_count = current_site_english_reviews
+    # ✅ CORREGIDO: Usar variable del idioma específico
+    updated_language_count = current_site_language_reviews
     
     # FASE 2: Reseñas históricas faltantes
-    missing_historical = updated_english_count - updated_scraped_count
+    # ✅ CORREGIDO: Usar variables del idioma específico
+    missing_historical = updated_language_count - updated_scraped_count
     if missing_historical > 0 and not self.stop_event.is_set():
       start_page_historical = (updated_scraped_count // self.REVIEWS_PER_PAGE) + 1
-      total_pages_needed = (updated_english_count + self.REVIEWS_PER_PAGE - 1) // self.REVIEWS_PER_PAGE
+      total_pages_needed = (updated_language_count + self.REVIEWS_PER_PAGE - 1) // self.REVIEWS_PER_PAGE
       end_page_historical = total_pages_needed
       
       log.debug(f"Fase 2 {attraction_name_val}: {missing_historical} históricas faltantes")
@@ -516,7 +619,8 @@ class ReviewScraper:
           scrape_status_parts.append("stopped_during_historical_reviews")
           break
           
-        page_url = self._build_page_url(attraction_url, page_num)
+        # ✅ CORREGIDO: Usar URL del idioma específico
+        page_url = self._build_page_url(language_url, page_num)
         reviews_on_page = await self._scrape_single_page_with_retries(page_url, attraction_name_val)
         processed_pages_this_run.add(page_num)
         
@@ -536,7 +640,8 @@ class ReviewScraper:
             region_name_to_update=region_name,
             attraction_url=attraction_url,
             new_reviews_data=newly_found_on_this_page_list,
-            site_english_count=current_site_english_reviews,
+            site_language_count=current_site_language_reviews,
+            language_code=self.target_language,
             attraction_name_if_new=attraction_name_val
           )
         
@@ -555,11 +660,12 @@ class ReviewScraper:
         scrape_status_parts.append("phase2_skipped_due_to_stop")
     
     # FASE 3: Scraping de emergencia
-    final_missing = current_site_english_reviews - len(processed_review_hashes)
+    # ✅ CORREGIDO: Usar variables del idioma específico
+    final_missing = current_site_language_reviews - len(processed_review_hashes)
     if final_missing > 0 and not self.stop_event.is_set():
       max_page_processed = max(processed_pages_this_run) if processed_pages_this_run else 0
       emergency_start = max_page_processed + 1
-      estimated_total_pages = (current_site_english_reviews + self.REVIEWS_PER_PAGE - 1) // self.REVIEWS_PER_PAGE
+      estimated_total_pages = (current_site_language_reviews + self.REVIEWS_PER_PAGE - 1) // self.REVIEWS_PER_PAGE
       max_emergency_pages = min(15, estimated_total_pages - max_page_processed)
       
       log.warning(f"Fase 3 {attraction_name_val}: {final_missing} aún faltantes")
@@ -571,7 +677,8 @@ class ReviewScraper:
         if self.stop_event.is_set() or consecutive_empty >= 3:
           break
           
-        page_url = self._build_page_url(attraction_url, page_num)
+        # ✅ CORREGIDO: Usar URL del idioma específico
+        page_url = self._build_page_url(language_url, page_num)
         reviews_on_page = await self._scrape_single_page_with_retries(page_url, attraction_name_val)
         processed_pages_this_run.add(page_num)
         
@@ -595,11 +702,12 @@ class ReviewScraper:
             region_name_to_update=region_name,
             attraction_url=attraction_url,
             new_reviews_data=newly_found_emergency,
-            site_english_count=current_site_english_reviews,
+            site_language_count=current_site_language_reviews,
+            language_code=self.target_language,
             attraction_name_if_new=attraction_name_val
           )
         
-        if len(processed_review_hashes) >= current_site_english_reviews:
+        if len(processed_review_hashes) >= current_site_language_reviews:
           break
           
         await smart_sleep(current_page=page_num, base_delay=random.uniform(0.5, 1.2))
@@ -620,12 +728,12 @@ class ReviewScraper:
     if self.stop_event.is_set():
       final_status_str = "stopped" + ("_with_data" if all_reviews_scraped_this_run_accumulator else "")
     elif not all_reviews_scraped_this_run_accumulator:
-      if len(processed_review_hashes) >= current_site_english_reviews:
+      if len(processed_review_hashes) >= current_site_language_reviews:
         final_status_str = "completed_up_to_date"
       else:
         final_status_str = "completed_no_new_found"
     else:
-      is_fully_complete = len(processed_review_hashes) >= current_site_english_reviews
+      is_fully_complete = len(processed_review_hashes) >= current_site_language_reviews
       final_status_str = "completed_found_reviews" + ("_fully_updated" if is_fully_complete else "_partially_incomplete")
     
     # Guardar metadatos finales
@@ -634,7 +742,8 @@ class ReviewScraper:
         region_name_to_update=region_name,
         attraction_url=attraction_url,
         new_reviews_data=[],
-        site_english_count=current_site_english_reviews,
+        site_language_count=current_site_language_reviews,
+        language_code=self.target_language,
         attraction_name_if_new=attraction_name_val
       )
     
@@ -644,53 +753,37 @@ class ReviewScraper:
       "attraction_name": attraction_name_val,
       "url": attraction_url,
       "newly_scraped_reviews": all_reviews_scraped_this_run_accumulator,
-      "current_site_english_reviews_count": current_site_english_reviews,
+      "current_site_language_reviews_count": current_site_language_reviews,
+      "language": self.target_language,  # ✅ AÑADIDO
       "final_scraped_count_in_json": len(processed_review_hashes),
       "scrape_status": final_status_str
     }
  
   # Métodos de apoyo
-  async def _scrape_single_page_with_retries(self, url: str, attraction_name: str, max_retries: int = None) -> List[Dict]:
-    """Scrapea una página con reintentos"""
-    if max_retries is None:
-      max_retries = self.max_retries
+  async def _scrape_single_page_with_retries(self, url: str, attraction_name: str) -> List[Dict]:
+    """Scrapea una página (sin reintentos según nuevos requerimientos)"""
+    if self.stop_event.is_set():
+      log.info(f"Scraping cancelado para {attraction_name}")
+      return []
       
-    for attempt in range(1, max_retries + 1):
-      if self.stop_event.is_set():
-        log.info(f"Scraping cancelado para {attraction_name}")
-        return []
-        
-      try:
-        log.debug(f"Scrapeando página {url} intento {attempt}/{max_retries}")
-        response = await self.client.get(url, headers=get_headers(referer=url))
-        response.raise_for_status()
-        parsed_reviews = self.parser.parse_reviews_page(response.text, url)
-        return parsed_reviews
-        
-      except httpx.ReadTimeout:
-        log.warning(f"Timeout en {url} intento {attempt}/{max_retries}")
-        if attempt == max_retries:
-          return []
-        await self._exponential_backoff(attempt)
-        
-      except httpx.HTTPStatusError as e_http:
-        log.warning(f"HTTP {e_http.response.status_code} en {url}")
-        if e_http.response.status_code == 403:
-          log.error(f"Error 403 en {url} - BLOQUEO DETECTADO")
-          self.stop_event.set()
-          return []
-        if attempt == max_retries or e_http.response.status_code in [404, 410]:
-          return []
-        await self._exponential_backoff(attempt)
-        
-      except Exception as e:
-        log.error(f"Error scrapeando {url} intento {attempt}: {e}")
-        if attempt == max_retries:
-          return []
-        await self._exponential_backoff(attempt)
-        
-    return []
-
+    try:
+      log.debug(f"Scrapeando página {url}")
+      response = await self.client.get(url, headers=get_headers(referer=url))
+      response.raise_for_status()
+      parsed_reviews = self.parser.parse_reviews_page(response.text, url)
+      return parsed_reviews
+      
+    except httpx.HTTPStatusError as e_http:
+      log.warning(f"HTTP {e_http.response.status_code} en {url}")
+      if e_http.response.status_code == 403:
+        log.error(f"Error 403 en {url} - BLOQUEO DETECTADO")
+        self.stop_event.set()
+      return []
+      
+    except Exception as e:
+      log.error(f"Error scrapeando {url}: {e}")
+      return []
+  
   def _generate_review_hash(self, review: Dict) -> int:
     """Genera hash único para una reseña"""
     review_id_from_parser = review.get("review_id")
@@ -704,53 +797,66 @@ class ReviewScraper:
     )
     return hash(key_fields)
 
-  async def _get_review_metrics(self, initial_url: str) -> Dict:
-    """Obtiene métricas de reseñas de una URL"""
-    final_english_reviews = 0
-    
+  async def _get_review_metrics_for_language(self, url: str) -> Dict:
+    """Obtiene métricas de reseñas para un idioma específico con reintentos"""
     try:
-      log.debug(f"Obteniendo métricas: {initial_url}")
-      response = await self.client.get(initial_url, headers=get_headers(referer=initial_url))
+      log.debug(f"Obteniendo métricas para {self.target_language}: {url}")
+      response = await self.client.get(url, headers=get_headers(referer=url))
       response.raise_for_status()
       selector = Selector(response.text)
       
-      is_english_view = ReviewMetricsCalculator.is_current_view_english(selector)
-      page_total_reviews_from_pagination = ReviewMetricsCalculator.extract_total_reviews(selector)
-      specific_english_count_from_button = ReviewMetricsCalculator.extract_specific_english_review_count(selector)
+      # Usar ReviewMetricsCalculator mejorado
+      metrics = ReviewMetricsCalculator.get_review_metrics_for_language(selector, self.target_language)
       
-      if is_english_view:
-        if page_total_reviews_from_pagination is not None:
-          final_english_reviews = page_total_reviews_from_pagination
-        elif specific_english_count_from_button is not None:
-          final_english_reviews = specific_english_count_from_button
-      else:
-        if specific_english_count_from_button is not None:
-          final_english_reviews = specific_english_count_from_button
-          
+      # ✅ Validación adicional basada en A.JSON
+      if metrics["source"] == "none" or metrics["total_reviews"] == 0:
+        log.warning(f"No se encontraron métricas válidas para {self.target_language}")
+        
+        # Intentar generar URL correcta si no estamos en la vista adecuada
+        if not metrics["is_correct_language_view"]:
+          corrected_url = ReviewMetricsCalculator.generate_language_url(url.split('?')[0], self.target_language)
+          if corrected_url != url:
+            log.info(f"Reintentando con URL de dominio específico: {corrected_url}")
+            try:
+              response = await self.client.get(corrected_url, headers=get_headers(referer=corrected_url))
+              response.raise_for_status()
+              selector = Selector(response.text)
+              metrics = ReviewMetricsCalculator.get_review_metrics_for_language(selector, self.target_language)
+            except Exception as e:
+              log.warning(f"Fallo al reintentar con URL corregida: {e}")
+      
+      # ⚠️ Log de advertencia si hay discrepancias
+      if (metrics.get("pagination_count") and metrics.get("language_button_count") and 
+          abs(metrics["pagination_count"] - metrics["language_button_count"]) > 50):
+        log.warning(f"Gran discrepancia en {self.target_language}: "
+                   f"paginación={metrics['pagination_count']}, "
+                   f"botón={metrics['language_button_count']}")
+      
+      return metrics
+      
     except httpx.HTTPStatusError as e_http_metrics:
       log.error(f"HTTP {e_http_metrics.response.status_code} obteniendo métricas")
       if e_http_metrics.response.status_code == 403:
         log.error(f"Error 403 obteniendo métricas - BLOQUEO DETECTADO")
         self.stop_event.set()
-      final_english_reviews = 0
+      return {"total_reviews": 0, "is_correct_language_view": False, "source": "error"}
       
     except Exception as e:
       log.error(f"Error obteniendo métricas: {e}")
-      final_english_reviews = 0
-    
-    return {"english_reviews": final_english_reviews}
-
+      return {"total_reviews": 0, "is_correct_language_view": False, "source": "error"}
+  
   async def _save_reviews_to_json_incrementally_internal(self,
                                                         region_name_to_update: str,
                                                         attraction_url: str,
                                                         new_reviews_data: List[Dict],
-                                                        site_english_count: int,
+                                                        site_language_count: int,
+                                                        language_code: str,
                                                         attraction_name_if_new: Optional[str] = None):
-    """Guarda reseñas de forma incremental al JSON"""
+    """Guarda reseñas de forma incremental al JSON con soporte multilenguaje"""
     if not self.json_output_filepath:
       log.warning("Ruta JSON no configurada")
       return
-
+  
     def _io_bound_save():
       with JSON_SAVE_LOCK:
         full_data = {"regions": []}
@@ -768,86 +874,163 @@ class ReviewScraper:
           log.warning(f"Error decodificando JSON desde {self.json_output_filepath}")
         except Exception as e:
           log.error(f"Error leyendo JSON: {e}")
-
+  
         # Encontrar región objetivo
         target_region_obj = None
         for region_obj in full_data.get("regions", []):
           if region_obj.get("region_name") == region_name_to_update:
             target_region_obj = region_obj
             break
-
+  
         if not target_region_obj:
           log.error(f"Región '{region_name_to_update}' no encontrada")
           return
-
+  
         # Encontrar o crear atracción
         attraction_to_update = None
         attraction_idx = -1
         if "attractions" not in target_region_obj or not isinstance(target_region_obj.get("attractions"), list):
           target_region_obj["attractions"] = []
-
+  
         for i, attraction_json_obj in enumerate(target_region_obj.get("attractions", [])):
           if attraction_json_obj.get("url") == attraction_url:
             attraction_to_update = attraction_json_obj
             attraction_idx = i
             break
-
+  
         if not attraction_to_update:
-          log.info(f"Creando nueva entrada para atracción: {attraction_url}")
-          attraction_to_update = {
-            "url": attraction_url,
-            "attraction_name": attraction_name_if_new or f"Nueva Atracción ({attraction_url})",
-            "reviews": [],
-            "position": None,
-            "place_type": "Sin Categoría",
-            "rating": 0.0,
-            "reviews_count": 0,
-          }
-          target_region_obj["attractions"].append(attraction_to_update)
-          attraction_idx = len(target_region_obj["attractions"]) - 1
-        
-        # Actualizar metadatos
-        attraction_to_update["english_reviews_count"] = site_english_count
-        attraction_to_update["last_reviews_scrape_date"] = datetime.now(timezone.utc).isoformat()
-        attraction_to_update["previously_scraped"] = True
+          log.error(f"Atracción con URL {attraction_url} no encontrada")
+          return
+  
+        # ✅ CORREGIDO: Estructura multilenguaje
+        if not attraction_to_update.get("languages"):
+          attraction_to_update["languages"] = {}
+      
+        if language_code not in attraction_to_update["languages"]:
+            attraction_to_update["languages"][language_code] = {
+                "reviews": [],
+                "reviews_count": 0,                    # Total esperado del sitio
+                "stored_reviews": 0,                   # Reseñas únicas guardadas
+                "skipped_duplicates": 0,               # Duplicadas saltadas (acumulativo)
+                "previously_scraped": False,
+                "last_scrape_date": None
+            }
+  
+        language_data = attraction_to_update["languages"][language_code]
+  
+        # Actualizar metadatos del idioma
+        language_data["reviews_count"] = site_language_count
+        language_data["last_scrape_date"] = datetime.now(timezone.utc).isoformat()
+        language_data["previously_scraped"] = True
+  
+        # Procesar reseñas evitando duplicados globales
+        existing_reviews_list = language_data.get("reviews", [])
+        all_existing_review_ids = set()
+        all_existing_reviews = []
+  
+        # Obtener todas las reseñas existentes de todos los idiomas
+        for lang, lang_data in attraction_to_update.get("languages", {}).items():
+            for review in lang_data.get("reviews", []):
+                if isinstance(review, dict):
+                    all_existing_reviews.append(review)
+                    review_id = review.get("review_id", "").strip()
+                    if review_id and review_id != "":
+                        all_existing_review_ids.add(review_id)
+  
+        existing_global_hashes = {self._generate_review_hash(r) for r in all_existing_reviews if isinstance(r, dict)}
+  
+        processed_review_ids_this_session = set()
+        processed_hashes_this_session = set()
 
-        # Procesar reseñas
-        existing_reviews_in_json_list = attraction_to_update.get("reviews", [])
-        if not isinstance(existing_reviews_in_json_list, list):
-          existing_reviews_in_json_list = []
+        existing_reviews_current_lang = language_data.get("reviews", [])
+        current_lang_review_ids = set()
+        current_lang_hashes = set()
+        for review in existing_reviews_current_lang:
+            if isinstance(review, dict):
+                review_id = review.get("review_id", "").strip()
+                if review_id and review_id != "":
+                    current_lang_review_ids.add(review_id)
+                current_lang_hashes.add(self._generate_review_hash(review))
 
-        existing_review_hashes_in_json_set = {self._generate_review_hash(r) for r in existing_reviews_in_json_list if isinstance(r, dict)}
-        
+        # Obtener reseñas existentes de OTROS idiomas (para detectar duplicados entre idiomas)
+        other_languages_review_ids = set()
+        other_languages_hashes = set()
+        for lang, lang_data in attraction_to_update.get("languages", {}).items():
+            if lang != language_code:  # Solo otros idiomas, no el actual
+                for review in lang_data.get("reviews", []):
+                    if isinstance(review, dict):
+                        review_id = review.get("review_id", "").strip()
+                        if review_id and review_id != "":
+                            other_languages_review_ids.add(review_id)
+                        other_languages_hashes.add(self._generate_review_hash(review))
+
+        processed_review_ids_this_session = set()
+        processed_hashes_this_session = set()
         added_this_save_call = 0
-        if new_reviews_data:
-          for review_item_data in new_reviews_data:
-            if not isinstance(review_item_data, dict):
-              continue
-            review_hash = self._generate_review_hash(review_item_data)
-            if review_hash not in existing_review_hashes_in_json_set:
-              existing_reviews_in_json_list.append(review_item_data)
-              existing_review_hashes_in_json_set.add(review_hash)
-              added_this_save_call += 1
-        
-        attraction_to_update["reviews"] = existing_reviews_in_json_list
-        attraction_to_update["scraped_reviews_count"] = len(existing_reviews_in_json_list)
+        skipped_duplicates = 0
 
+        if new_reviews_data:
+            for review_item_data in new_reviews_data:
+                if not isinstance(review_item_data, dict):
+                    continue
+                
+                review_id = review_item_data.get("review_id", "").strip()
+                is_duplicate = False
+                duplicate_reason = ""
+
+                if review_id and review_id != "":
+                    # Verificar si ya existe en el idioma actual
+                    if review_id in current_lang_review_ids or review_id in processed_review_ids_this_session:
+                        is_duplicate = True
+                        duplicate_reason = "same_language"
+                    # Verificar si ya existe en otros idiomas
+                    elif review_id in other_languages_review_ids:
+                        is_duplicate = True
+                        duplicate_reason = "cross_language"
+                    else:
+                        processed_review_ids_this_session.add(review_id)
+                else:
+                    # Fallback: usar hash
+                    review_hash = self._generate_review_hash(review_item_data)
+                    if review_hash in current_lang_hashes or review_hash in processed_hashes_this_session:
+                        is_duplicate = True
+                        duplicate_reason = "same_language_hash"
+                    elif review_hash in other_languages_hashes:
+                        is_duplicate = True
+                        duplicate_reason = "cross_language_hash"
+                    else:
+                        processed_hashes_this_session.add(review_hash)
+
+                # Guardar o contar como duplicado
+                if not is_duplicate:
+                    existing_reviews_list.append(review_item_data)
+                    added_this_save_call += 1
+                else:
+                    skipped_duplicates += 1
+                    log.debug(f"Review duplicada ({duplicate_reason}): {review_id}")
+
+        language_data["reviews"] = existing_reviews_list
+        language_data["stored_reviews"] = len(existing_reviews_list)
+        language_data["skipped_duplicates"] += skipped_duplicates
+        
+  
         # Asegurar nombre de atracción
-        if not attraction_to_update.get("attraction_name") or "Nueva Atracción" in attraction_to_update.get("attraction_name", ""):
+        if not attraction_to_update.get("attraction_name") or "Nueva Atracción" in attraction_to_update.get("attraction_name", ""):  # ✅ CORREGIDO
           if attraction_name_if_new:
             attraction_to_update["attraction_name"] = attraction_name_if_new
-
-        attraction_name_log = attraction_to_update.get('attraction_name', attraction_url)
+  
+        attraction_name_log = attraction_to_update.get('attraction_name', attraction_url) 
         if added_this_save_call > 0:
-          log.info(f"JSON: {added_this_save_call} nuevas reseñas para '{attraction_name_log}' total={attraction_to_update['scraped_reviews_count']}")
+          log.info(f"JSON: {added_this_save_call} nuevas reseñas en {language_code} para '{attraction_name_log}' "
+                  f"total_único={attraction_to_update['scraped_reviews_count']}")
         elif new_reviews_data:
-          log.debug(f"JSON: metadatos actualizados para '{attraction_name_log}'")
+          log.debug(f"JSON: metadatos actualizados para '{attraction_name_log}' en {language_code}")
         else:
-          log.debug(f"JSON: metadatos para '{attraction_name_log}' english_count={site_english_count}")
+          log.debug(f"JSON: metadatos para '{attraction_name_log}' {language_code}_count={site_language_count}")
         
         # Actualizar atracción en lista
         target_region_obj["attractions"][attraction_idx] = attraction_to_update
-
+  
         # Guardar archivo
         try:
           with open(self.json_output_filepath, 'w', encoding='utf-8') as f:
@@ -856,7 +1039,7 @@ class ReviewScraper:
           log.error(f"Error E/O escribiendo JSON: {e}")
         except Exception as e:
           log.error(f"Error guardando JSON: {e}")
-
+  
     await asyncio.to_thread(_io_bound_save)
 
   def _build_page_url(self, base_url_page1: str, page_number: int) -> str:
@@ -879,27 +1062,22 @@ class ReviewScraper:
       return f"{url_prefix}-or{offset}-{url_suffix}"
 
   def _build_error_response(self, attraction_data: Dict, status_code: str, error_message: str) -> Dict:
-    """Construye respuesta de error estándar"""
+    """Construye respuesta de error estándar para multilenguaje"""
     attraction_name_val = attraction_data.get("attraction_name", "Desconocido")
     url = attraction_data.get("url", "")
-    initial_english_count = attraction_data.get("english_reviews_count", 0)
-    current_scraped_in_json = len(attraction_data.get("reviews", []))
+    
+    # ✅ CORREGIDO: Usar datos del idioma específico
+    language_data = attraction_data.get("languages", {}).get(self.target_language, {})
+    initial_language_count = language_data.get("reviews_count", 0)
+    current_scraped_in_json = len(language_data.get("reviews", []))
     
     return {
       "attraction_name": attraction_name_val,
       "url": url,
       "newly_scraped_reviews": [],
-      "current_site_english_reviews_count": initial_english_count,
+      "current_site_language_reviews_count": initial_language_count,
+      "language": self.target_language,  # ✅ AÑADIDO
       "final_scraped_count_in_json": current_scraped_in_json,
       "scrape_status": status_code,
       "error": error_message
     }
-
-  async def _exponential_backoff(self, attempt: int):
-    """Implementa backoff exponencial para reintentos"""
-    base_delay = 1.0
-    max_delay = 60.0
-    delay = min(base_delay * (2 ** attempt), max_delay)
-    wait_time = delay + random.uniform(0.5, 1.5)
-    log.debug(f"Intento {attempt} fallido esperando {wait_time:.2f}s")
-    await asyncio.sleep(wait_time)

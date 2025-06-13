@@ -144,59 +144,160 @@ class DataHandler:
     self.data["regions"].append(new_region)
     return new_region
 
+  
   def _process_attraction(self, region_data: Dict, attraction_data: Dict):
-    """Procesa una atracción"""
-    url = attraction_data.get("url")
-    name = attraction_data.get("place_name")
-    
-    # Buscar existente
-    for attraction in region_data.get("attractions", []):
-      if attraction.get("url") == url or attraction.get("attraction_name") == name:
-        # Actualizar existente
-        attraction.update(attraction_data)
-        return
-    
-    # Añadir nueva
-    new_attraction = {
-      "position": attraction_data.get("position"),
-      "attraction_name": name or "Atracción Desconocida",
-      "place_type": attraction_data.get("place_type", "Sin Categoría"),
-      "rating": attraction_data.get("rating", 0.0),
-      "reviews_count": attraction_data.get("reviews_count", 0),
-      "url": url or "",
-      "reviews": [],
-      "scraped_reviews_count": 0,
-      "english_reviews_count": 0,
-      "last_reviews_scrape_date": None
-    }
-    region_data["attractions"].append(new_attraction)
+      """Procesa una atracción - SOLO URL COMO CLAVE ÚNICA (CORREGIDO)"""
+      url = attraction_data.get("url", "").strip()
+      name = attraction_data.get("attraction_name", "").strip()
+      
+      # ✅ VALIDACIÓN CORREGIDA: Solo validar que tenga URL y nombre válidos
+      if not url or not name:
+          log.warning(f"Atracción sin datos básicos omitida: name='{name}', url='{url}'")
+          return
+      
+      # ✅ VALIDACIÓN MEJORADA: Solo rechazar si es un placeholder obvio
+      if name in ["Lugar Desconocido", "Atracción Desconocida", "Sin nombre"] and not url.startswith("https://"):
+          log.warning(f"Atracción placeholder omitida: {name} - {url}")
+          return
+      
+      # ✅ BUSCAR EXISTENTE SOLO POR URL (esto ya estaba bien)
+      for existing_attraction in region_data.get("attractions", []):
+          existing_url = existing_attraction.get("url", "").strip()
+          
+          # ✅ COMPARACIÓN EXACTA POR URL ÚNICAMENTE
+          if existing_url == url and url != "":
+              log.debug(f"Actualizando atracción existente por URL: {name}")
+              
+              # Preservar datos importantes existentes
+              preserved_data = {
+                  "languages": existing_attraction.get("languages", {}),
+                  "scraped_reviews_count": existing_attraction.get("scraped_reviews_count", 0),
+                  "last_analyzed_date": existing_attraction.get("last_analyzed_date")
+              }
+              
+              # ✅ FUSIÓN INTELIGENTE: Mantener los mejores datos
+              updated_attraction = {}
+              
+              # Posición: preferir la nueva si existe
+              updated_attraction["position"] = (
+                  attraction_data.get("position") or 
+                  existing_attraction.get("position")
+              )
+              
+              # Nombre: preferir el nuevo si es más específico
+              new_name = attraction_data.get("attraction_name", "").strip()
+              existing_name = existing_attraction.get("attraction_name", "").strip()
+              
+              if new_name and new_name not in ["Lugar Desconocido", "Atracción Desconocida"]:
+                  updated_attraction["attraction_name"] = new_name
+              elif existing_name and existing_name not in ["Lugar Desconocido", "Atracción Desconocida"]:
+                  updated_attraction["attraction_name"] = existing_name
+              else:
+                  updated_attraction["attraction_name"] = new_name or existing_name
+              
+              # URL: mantener la misma
+              updated_attraction["url"] = url
+              
+              # Rating: usar el más alto
+              new_rating = float(attraction_data.get("rating", 0.0))
+              existing_rating = float(existing_attraction.get("rating", 0.0))
+              updated_attraction["rating"] = max(new_rating, existing_rating)
+              
+              # Reviews count: usar el más alto
+              new_reviews = int(attraction_data.get("reviews_count", 0))
+              existing_reviews = int(existing_attraction.get("reviews_count", 0))
+              updated_attraction["reviews_count"] = max(new_reviews, existing_reviews)
+              
+              # Place type: preferir el más específico
+              new_type = attraction_data.get("place_type", "").strip()
+              existing_type = existing_attraction.get("place_type", "").strip()
+              
+              if new_type and new_type not in ["Sin Categoría", "Unknown"]:
+                  updated_attraction["place_type"] = new_type
+              elif existing_type and existing_type not in ["Sin Categoría", "Unknown"]:
+                  updated_attraction["place_type"] = existing_type
+              else:
+                  updated_attraction["place_type"] = "Sin Categoría"
+              
+              # Restaurar datos preservados
+              updated_attraction.update(preserved_data)
+              
+              # ✅ ACTUALIZAR la atracción existente
+              existing_attraction.clear()
+              existing_attraction.update(updated_attraction)
+              
+              log.info(f"✅ Atracción actualizada por URL: {updated_attraction['attraction_name']} "
+                       f"(rating: {updated_attraction['rating']}, reseñas: {updated_attraction['reviews_count']})")
+              return  # ✅ CRUCIAL: Return para NO crear duplicado
+      
+      # ✅ CREAR NUEVA ATRACCIÓN (URL no encontrada - NOMBRES REPETIDOS PERMITIDOS)
+      new_attraction = {
+          "position": attraction_data.get("position"),
+          "attraction_name": name,
+          "place_type": attraction_data.get("place_type", "Sin Categoría"),
+          "rating": float(attraction_data.get("rating", 0.0)),
+          "reviews_count": int(attraction_data.get("reviews_count", 0)),
+          "url": url,
+          "languages": {},
+          "scraped_reviews_count": 0,
+      }
+      
+      region_data["attractions"].append(new_attraction)
+      log.info(f"✅ Nueva atracción creada: {name} (URL: {url[:50]}...) "
+               f"(rating: {new_attraction['rating']}, reseñas: {new_attraction['reviews_count']})")
 
   # ==================== RESEÑAS ====================
   
   async def update_reviews(self, region_name: str, attraction_url: str, 
-                         new_reviews: List[Dict], english_count: Optional[int] = None) -> Optional[Path]:
-    """Actualiza reseñas de una atracción"""
-    region_data = self.get_region_data(region_name)
-    if not region_data:
-      return None
-
-    attraction = self._find_attraction_by_url(region_data, attraction_url)
-    if not attraction:
-      return None
-
-    # Fusionar reseñas
-    existing_reviews = attraction.get("reviews", [])
-    merged_reviews = self._merge_reviews(existing_reviews, new_reviews)
-
-    # Actualizar
-    attraction["reviews"] = merged_reviews
-    attraction["scraped_reviews_count"] = len(merged_reviews)
-    attraction["last_reviews_scrape_date"] = datetime.now(timezone.utc).isoformat()
-    
-    if english_count is not None:
-      attraction["english_reviews_count"] = english_count
-
-    return await self.save_data()
+                         new_reviews: List[Dict], english_count: Optional[int] = None,
+                         language: str = "english") -> Optional[Path]:
+      """Actualiza reseñas de una atracción - MULTILENGUAJE"""
+      region_data = self.get_region_data(region_name)
+      if not region_data:
+          return None
+  
+      attraction = self._find_attraction_by_url(region_data, attraction_url)
+      if not attraction:
+          return None
+  
+      # ✅ NUEVO: Inicializar estructura multilenguaje si no existe
+      if "languages" not in attraction:
+          attraction["languages"] = {}
+      
+      if language not in attraction["languages"]:
+          attraction["languages"][language] = {
+              "reviews": [],
+              "reviews_count": 0,
+              "stored_reviews": 0,
+              "skipped_duplicates": 0,
+              "previously_scraped": False,
+              "last_scrape_date": None
+          }
+  
+      # ✅ NUEVO: Fusionar reseñas en la estructura multilenguaje
+      existing_reviews = attraction["languages"][language].get("reviews", [])
+      merged_reviews = self._merge_reviews(existing_reviews, new_reviews)
+  
+      # ✅ ACTUALIZADO: Actualizar estructura multilenguaje
+      attraction["languages"][language]["reviews"] = merged_reviews
+      attraction["languages"][language]["stored_reviews"] = len(merged_reviews)
+      attraction["languages"][language]["last_scrape_date"] = datetime.now(timezone.utc).isoformat()
+      attraction["languages"][language]["previously_scraped"] = True
+      
+      # ✅ SOLO: Mantener scraped_reviews_count para compatibilidad
+      all_unique_reviews = []
+      all_unique_hashes = set()
+      
+      for lang_data in attraction.get("languages", {}).items():
+          for review in lang_data.get("reviews", []):
+              review_key = self._get_review_key(review)
+              if review_key not in all_unique_hashes:
+                  all_unique_reviews.append(review)
+                  all_unique_hashes.add(review_key)
+      
+      attraction["scraped_reviews_count"] = len(all_unique_reviews)
+      
+      return await self.save_data()
 
   def _find_attraction_by_url(self, region_data: Dict, url: str) -> Optional[Dict]:
     """Busca atracción por URL"""
@@ -237,6 +338,92 @@ class DataHandler:
 
   # ==================== ANÁLISIS DE SENTIMIENTOS ====================
 
+  def get_all_languages_in_region(self, region_name: str) -> List[str]:
+    """Obtiene lista de idiomas disponibles en una región - NUEVO"""
+    region_data = self.get_region_data(region_name)
+    if not region_data:
+      return []
+
+    languages = set()
+
+    for attraction in region_data.get("attractions", []):
+      # De estructura multilenguaje
+      languages_data = attraction.get("languages", {})
+      languages.update(languages_data.keys())
+
+      # De estructura antigua
+      old_reviews = attraction.get("reviews", [])
+      for review in old_reviews:
+        if lang := review.get("language"):
+          languages.add(lang)
+
+    return sorted(list(languages))
+
+  def get_all_languages_in_data(self) -> List[str]:
+    """Obtiene lista de todos los idiomas disponibles en todos los datos - NUEVO"""
+    all_languages = set()
+
+    for region in self.data.get("regions", []):
+      region_name = region.get("region_name")
+      if region_name:
+        region_languages = self.get_all_languages_in_region(region_name)
+        all_languages.update(region_languages)
+
+    return sorted(list(all_languages))
+
+  def get_multilingual_stats_summary(self) -> Dict:
+    """Obtiene resumen de estadísticas multilenguaje - NUEVO"""
+    total_regions = len(self.data.get("regions", []))
+    total_attractions = 0
+    total_reviews = 0
+    total_analyzed = 0
+    language_breakdown = {}
+
+    for region in self.data.get("regions", []):
+      attractions = region.get("attractions", [])
+      total_attractions += len(attractions)
+
+      for attraction in attractions:
+        # Estructura multilenguaje
+        languages_data = attraction.get("languages", {})
+        for lang, lang_data in languages_data.items():
+          if lang not in language_breakdown:
+            language_breakdown[lang] = {"total": 0, "analyzed": 0}
+
+          reviews = lang_data.get("reviews", [])
+          total_reviews += len(reviews)
+          language_breakdown[lang]["total"] += len(reviews)
+
+          for review in reviews:
+            if review.get("sentiment"):
+              total_analyzed += 1
+              language_breakdown[lang]["analyzed"] += 1
+
+        # Estructura antigua (compatibilidad)
+        old_reviews = attraction.get("reviews", [])
+        for review in old_reviews:
+          lang = review.get("language", "unknown")
+          if lang not in language_breakdown:
+            language_breakdown[lang] = {"total": 0, "analyzed": 0}
+
+          total_reviews += 1
+          language_breakdown[lang]["total"] += 1
+
+          if review.get("sentiment"):
+            total_analyzed += 1
+            language_breakdown[lang]["analyzed"] += 1
+
+    return {
+      "total_regions": total_regions,
+      "total_attractions": total_attractions,
+      "total_reviews": total_reviews,
+      "total_analyzed": total_analyzed,
+      "pending_analysis": total_reviews - total_analyzed,
+      "coverage_percentage": (total_analyzed / total_reviews * 100) if total_reviews > 0 else 0,
+      "available_languages": sorted(language_breakdown.keys()),
+      "language_breakdown": language_breakdown
+    }
+
   def update_region_attractions(self, region_name: str, attractions_data: List[Dict]) -> None:
     """Actualiza las atracciones de una región específica después del análisis"""
     try:
@@ -264,37 +451,80 @@ class DataHandler:
     except Exception as e:
       log.error(f"Error actualizando fecha de '{region_name}': {e}")
 
-  def get_region_analysis_stats(self, region_name: str) -> Dict:
-    """Obtiene estadísticas de análisis para una región"""
+  def get_region_analysis_stats(self, region_name: str, language: str = "all") -> Dict:  # ✅ NUEVO parámetro
+    """Obtiene estadísticas de análisis para una región - MULTILENGUAJE"""
     region_data = self.get_region_data(region_name)
     if not region_data:
       return {
         "total_reviews": 0,
         "analyzed_reviews": 0,
         "pending_reviews": 0,
-        "last_analyzed_date": None
+        "last_analyzed_date": None,
+        "language_breakdown": {}  # ✅ NUEVO
       }
     
     total_reviews = 0
     analyzed_reviews = 0
+    language_breakdown = {}  # ✅ NUEVO
     
     for attraction in region_data.get("attractions", []):
-      for review in attraction.get("reviews", []):
-        total_reviews += 1
-        if review.get("sentiment"):
-          analyzed_reviews += 1
+      # ✅ NUEVO: Procesar estructura multilenguaje
+      if language == "all":
+        # Compatibilidad con estructura antigua
+        old_reviews = attraction.get("reviews", [])
+        for review in old_reviews:
+          total_reviews += 1
+          review_lang = review.get("language", "unknown")
+          if review_lang not in language_breakdown:
+            language_breakdown[review_lang] = {"total": 0, "analyzed": 0}
+          language_breakdown[review_lang]["total"] += 1
+          
+          if review.get("sentiment"):
+            analyzed_reviews += 1
+            language_breakdown[review_lang]["analyzed"] += 1
+        
+        # Nueva estructura multilenguaje
+        languages_data = attraction.get("languages", {})
+        for lang, lang_data in languages_data.items():
+          if lang not in language_breakdown:
+            language_breakdown[lang] = {"total": 0, "analyzed": 0}
+            
+          for review in lang_data.get("reviews", []):
+            total_reviews += 1
+            language_breakdown[lang]["total"] += 1
+            
+            if review.get("sentiment"):
+              analyzed_reviews += 1
+              language_breakdown[lang]["analyzed"] += 1
+      else:
+        # Filtrar por idioma específico
+        language_data = attraction.get("languages", {}).get(language, {})
+        for review in language_data.get("reviews", []):
+          total_reviews += 1
+          if review.get("sentiment"):
+            analyzed_reviews += 1
+        
+        # Compatibilidad: procesar reseñas antiguas del idioma específico
+        old_reviews = attraction.get("reviews", [])
+        for review in old_reviews:
+          if review.get("language") == language:
+            total_reviews += 1
+            if review.get("sentiment"):
+              analyzed_reviews += 1
     
     return {
       "total_reviews": total_reviews,
       "analyzed_reviews": analyzed_reviews,
       "pending_reviews": total_reviews - analyzed_reviews,
-      "last_analyzed_date": region_data.get("last_analyzed_date")
+      "last_analyzed_date": region_data.get("last_analyzed_date"),
+      "language_breakdown": language_breakdown  # ✅ NUEVO
     }
 
   # ==================== EXPORTACIÓN ====================
   
-  async def export_regions(self, region_names: List[str], format: str = "excel") -> Optional[Path]:
-    """Exporta regiones seleccionadas"""
+  async def export_regions(self, region_names: List[str], format: str = "excel", 
+                          language: str = "all") -> Optional[Path]:  # ✅ NUEVO parámetro
+    """Exporta regiones seleccionadas - MULTILENGUAJE"""
     selected_regions = [
       region for region in self.data.get("regions", [])
       if region.get("region_name") in region_names
@@ -302,6 +532,32 @@ class DataHandler:
 
     if not selected_regions:
       return None
+
+    # ✅ NUEVO: Filtrar por idioma si no es "all"
+    if language != "all":
+      import copy
+      filtered_regions = copy.deepcopy(selected_regions)
+      
+      for region in filtered_regions:
+        for attraction in region.get("attractions", []):
+          # Filtrar reseñas por idioma
+          filtered_reviews = []
+          
+          # Nueva estructura multilenguaje
+          language_data = attraction.get("languages", {}).get(language, {})
+          filtered_reviews.extend(language_data.get("reviews", []))
+          
+          # Compatibilidad con estructura antigua
+          old_reviews = attraction.get("reviews", [])
+          for review in old_reviews:
+            if review.get("language") == language:
+              filtered_reviews.append(review)
+          
+          # Reemplazar con reseñas filtradas
+          attraction["reviews"] = filtered_reviews
+          attraction["languages"] = {language: {"reviews": filtered_reviews}}
+      
+      selected_regions = filtered_regions
 
     from ..utils.exporters import DataExporter
     exporter = DataExporter()

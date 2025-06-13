@@ -40,8 +40,12 @@ UI_COLUMN_MAPPING = {
   "sentiment": "Sentimiento",
   "sentiment_score": "Score Sentimiento (0-4)",
   "review_text": "Texto Reseña",
-  "written_date": "Fecha Escrita"
+  "written_date": "Fecha Escrita",
+  "language": "Idioma",  # ✅ NUEVO
+  "is_translated": "Traducida",  # ✅ NUEVO
+  "username": "Usuario"  # ✅ NUEVO
 }
+
 
 # Funciones de datos
 def get_all_reviews_for_ui(data_handler, selected_region_name: str) -> List[Dict]:
@@ -92,8 +96,36 @@ def _has_sentiment_analysis(review: Dict) -> bool:
   
   return has_sentiment and has_score
 
-def _get_all_regions_reviews(all_regions_data: List[Dict]) -> List[Dict]:
-  """Extrae reseñas de todas las regiones con metadatos"""
+def get_all_reviews_for_ui(data_handler, selected_region_name: str, display_language: str = "all") -> List[Dict]:
+  """Obtiene reseñas con análisis de sentimiento válido por región e idioma - MULTILENGUAJE"""
+  reviews_for_display = []
+  
+  if not hasattr(data_handler, 'data') or not data_handler.data:
+    log.warning("DataHandler sin datos")
+    return reviews_for_display
+  
+  all_regions_data = data_handler.data.get("regions", [])
+  if not all_regions_data:
+    log.warning("Sin datos de regiones")
+    return reviews_for_display
+  
+  # Filtrar por región
+  if selected_region_name == "Todas las regiones":
+    reviews_for_display = _get_all_regions_reviews(all_regions_data, display_language)
+  else:
+    reviews_for_display = _get_single_region_reviews(all_regions_data, selected_region_name, display_language)
+  
+  # Filtrar solo reseñas analizadas
+  analyzed_reviews = [
+    review for review in reviews_for_display 
+    if _has_sentiment_analysis(review)
+  ]
+  
+  log.info(f"Filtradas {len(analyzed_reviews)} reseñas de {len(reviews_for_display)} totales para idioma: {display_language}")
+  return analyzed_reviews
+
+def _get_all_regions_reviews(all_regions_data: List[Dict], display_language: str = "all") -> List[Dict]:
+  """Extrae reseñas de todas las regiones con metadatos - MULTILENGUAJE"""
   reviews_for_display = []
   
   for region_item in all_regions_data:
@@ -102,16 +134,50 @@ def _get_all_regions_reviews(all_regions_data: List[Dict]) -> List[Dict]:
     for attraction_item in region_item.get("attractions", []):
       attraction_name = attraction_item.get("attraction_name", "Atracción Desconocida")
       
-      for review_item in attraction_item.get("reviews", []):
-        review_copy = review_item.copy()
-        review_copy["region_display_name"] = region_name
-        review_copy["attraction_display_name"] = attraction_name
-        reviews_for_display.append(review_copy)
+      # ✅ NUEVO: Procesar estructura multilenguaje
+      if display_language == "all":
+        # Incluir reseñas de todos los idiomas
+        # Compatibilidad con estructura antigua
+        old_reviews = attraction_item.get("reviews", [])
+        for review_item in old_reviews:
+          review_copy = review_item.copy()
+          review_copy["region_display_name"] = region_name
+          review_copy["attraction_display_name"] = attraction_name
+          review_copy["language"] = review_copy.get("language", "unknown")  # ✅ NUEVO
+          reviews_for_display.append(review_copy)
+        
+        # Nueva estructura multilenguaje
+        languages_data = attraction_item.get("languages", {})
+        for lang, lang_data in languages_data.items():
+          for review_item in lang_data.get("reviews", []):
+            review_copy = review_item.copy()
+            review_copy["region_display_name"] = region_name
+            review_copy["attraction_display_name"] = attraction_name
+            review_copy["language"] = lang  # ✅ NUEVO
+            reviews_for_display.append(review_copy)
+      else:
+        # Incluir solo reseñas del idioma específico
+        language_data = attraction_item.get("languages", {}).get(display_language, {})
+        for review_item in language_data.get("reviews", []):
+          review_copy = review_item.copy()
+          review_copy["region_display_name"] = region_name
+          review_copy["attraction_display_name"] = attraction_name
+          review_copy["language"] = display_language  # ✅ NUEVO
+          reviews_for_display.append(review_copy)
+        
+        # Compatibilidad: filtrar reseñas antiguas por idioma si existe el campo
+        old_reviews = attraction_item.get("reviews", [])
+        for review_item in old_reviews:
+          if review_item.get("language") == display_language:
+            review_copy = review_item.copy()
+            review_copy["region_display_name"] = region_name
+            review_copy["attraction_display_name"] = attraction_name
+            reviews_for_display.append(review_copy)
   
   return reviews_for_display
 
-def _get_single_region_reviews(all_regions_data: List[Dict], region_name: str) -> List[Dict]:
-  """Extrae reseñas de una región específica"""
+def _get_single_region_reviews(all_regions_data: List[Dict], region_name: str, display_language: str = "all") -> List[Dict]:
+  """Extrae reseñas de una región específica - MULTILENGUAJE"""
   reviews_for_display = []
   
   region_data = next(
@@ -127,11 +193,45 @@ def _get_single_region_reviews(all_regions_data: List[Dict], region_name: str) -
   for attraction_item in region_data.get("attractions", []):
     attraction_name = attraction_item.get("attraction_name", "Atracción Desconocida")
     
-    for review_item in attraction_item.get("reviews", []):
-      review_copy = review_item.copy()
-      review_copy["region_display_name"] = region_display_name
-      review_copy["attraction_display_name"] = attraction_name
-      reviews_for_display.append(review_copy)
+    # ✅ NUEVO: Procesar estructura multilenguaje
+    if display_language == "all":
+      # Incluir reseñas de todos los idiomas
+      # Compatibilidad con estructura antigua
+      old_reviews = attraction_item.get("reviews", [])
+      for review_item in old_reviews:
+        review_copy = review_item.copy()
+        review_copy["region_display_name"] = region_display_name
+        review_copy["attraction_display_name"] = attraction_name
+        review_copy["language"] = review_copy.get("language", "unknown")  # ✅ NUEVO
+        reviews_for_display.append(review_copy)
+      
+      # Nueva estructura multilenguaje
+      languages_data = attraction_item.get("languages", {})
+      for lang, lang_data in languages_data.items():
+        for review_item in lang_data.get("reviews", []):
+          review_copy = review_item.copy()
+          review_copy["region_display_name"] = region_display_name
+          review_copy["attraction_display_name"] = attraction_name
+          review_copy["language"] = lang  # ✅ NUEVO
+          reviews_for_display.append(review_copy)
+    else:
+      # Incluir solo reseñas del idioma específico
+      language_data = attraction_item.get("languages", {}).get(display_language, {})
+      for review_item in language_data.get("reviews", []):
+        review_copy = review_item.copy()
+        review_copy["region_display_name"] = region_display_name
+        review_copy["attraction_display_name"] = attraction_name
+        review_copy["language"] = display_language  # ✅ NUEVO
+        reviews_for_display.append(review_copy)
+      
+      # Compatibilidad: filtrar reseñas antiguas por idioma si existe el campo
+      old_reviews = attraction_item.get("reviews", [])
+      for review_item in old_reviews:
+        if review_item.get("language") == display_language:
+          review_copy = review_item.copy()
+          review_copy["region_display_name"] = region_display_name
+          review_copy["attraction_display_name"] = attraction_name
+          reviews_for_display.append(review_copy)
   
   return reviews_for_display
 
@@ -496,20 +596,71 @@ def display_sentiment_score_histogram(stats_data: Dict) -> None:
   st.plotly_chart(fig, use_container_width=True)
 
 # Exportación
-def handle_excel_export(data_handler, selected_region_name: str, reviews_count: int) -> None:
-  """Maneja exportación a Excel"""
+def _prepare_export_data(data_handler, selected_region_name: str, display_language: str = "all") -> Dict:
+  """Prepara datos filtrados para exportación - MULTILENGUAJE"""
+  regions_data = data_handler.data.get("regions", [])
+  
+  if selected_region_name == "Todas las regiones":
+    filtered_regions = regions_data
+  else:
+    filtered_regions = [
+      r for r in regions_data
+      if r.get("region_name") == selected_region_name
+    ]
+  
+  # ✅ NUEVO: Filtrar por idioma si no es "all"
+  if display_language != "all":
+    # Crear copia profunda y filtrar por idioma
+    import copy
+    filtered_regions_copy = copy.deepcopy(filtered_regions)
+    
+    for region in filtered_regions_copy:
+      for attraction in region.get("attractions", []):
+        # Filtrar reseñas por idioma
+        filtered_reviews = []
+        
+        # Nueva estructura multilenguaje
+        language_data = attraction.get("languages", {}).get(display_language, {})
+        filtered_reviews.extend(language_data.get("reviews", []))
+        
+        # Compatibilidad con estructura antigua
+        old_reviews = attraction.get("reviews", [])
+        for review in old_reviews:
+          if review.get("language") == display_language:
+            filtered_reviews.append(review)
+        
+        # Reemplazar reseñas con las filtradas
+        attraction["reviews"] = filtered_reviews
+        
+        # Limpiar estructura de idiomas para exportación
+        if "languages" in attraction:
+          attraction["languages"] = {display_language: {"reviews": filtered_reviews}}
+    
+    return {"regions": filtered_regions_copy}
+  
+  return {"regions": filtered_regions}
+
+def _generate_filename(region_name: str, display_language: str = "all") -> str:
+  """Genera nombre de archivo para exportación - ACTUALIZADO"""
+  safe_region_name = region_name.replace(' ', '_').replace('/', '_')
+  language_suffix = f"_{display_language}" if display_language != "all" else "_todos_idiomas"
+  timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+  return f"datos_{safe_region_name}{language_suffix}_{timestamp}.xlsx"
+
+def handle_excel_export(data_handler, selected_region_name: str, reviews_count: int, display_language: str = "all") -> None:
+  """Maneja exportación a Excel - ACTUALIZADA"""
   if reviews_count == 0:
     st.error("No hay reseñas para exportar")
     return
   
   with st.spinner("Generando archivo Excel..."):
     try:
-      data_for_export = _prepare_export_data(data_handler, selected_region_name)
+      data_for_export = _prepare_export_data(data_handler, selected_region_name, display_language)
       exporter = DataExporter()
       excel_bytes = exporter.export_to_excel_bytes(data_for_export)
       
       if excel_bytes:
-        filename = _generate_filename(selected_region_name)
+        filename = _generate_filename(selected_region_name, display_language)
         st.download_button(
           label="Descargar Excel",
           data=excel_bytes,
@@ -517,7 +668,10 @@ def handle_excel_export(data_handler, selected_region_name: str, reviews_count: 
           mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           key="immediate_download_button"
         )
-        st.success("Archivo Excel generado exitosamente")
+        if display_language == "all":
+          st.success("Archivo Excel generado exitosamente (todos los idiomas)")
+        else:
+          st.success(f"Archivo Excel generado exitosamente para {display_language}")
       else:
         st.error("Error generando el archivo Excel")
         
@@ -525,22 +679,13 @@ def handle_excel_export(data_handler, selected_region_name: str, reviews_count: 
       log.error(f"Error exportación Excel: {e}")
       st.error(f"Error generando archivo: {str(e)}")
 
-def _prepare_export_data(data_handler, selected_region_name: str) -> Dict:
-  """Prepara datos filtrados para exportación"""
-  if selected_region_name == "Todas las regiones":
-    return {"regions": data_handler.data.get("regions", [])}
-  else:
-    filtered_regions = [
-      r for r in data_handler.data.get("regions", [])
-      if r.get("region_name") == selected_region_name
-    ]
-    return {"regions": filtered_regions}
-
-def _generate_filename(region_name: str) -> str:
-  """Genera nombre de archivo para exportación"""
-  safe_region_name = region_name.replace(' ', '_').replace('/', '_')
-  timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-  return f"datos_{safe_region_name}_{timestamp}.xlsx"
+def _render_export_section(data_handler, selected_region: str, reviews_count: int, display_language: str = "all") -> None:
+  """Renderiza sección de exportación - ACTUALIZADA"""
+  col_filter1, col_filter2, col_download = st.columns([2, 2, 1])
+  
+  with col_download:
+    if st.button("Generar Excel", key="main_download_button"):
+      handle_excel_export(data_handler, selected_region, reviews_count, display_language)
 
 # Interfaz principal
 def render(data_handler):
@@ -557,15 +702,16 @@ def render(data_handler):
     st.warning("No hay regiones disponibles para mostrar")
     return
   
-  selected_region = _render_filters_section(region_names)
-  reviews_data = get_all_reviews_for_ui(data_handler, selected_region)
+  # ✅ NUEVO: Agregar selector de idioma
+  selected_region, display_language = _render_filters_section(region_names)
+  reviews_data = get_all_reviews_for_ui(data_handler, selected_region, display_language)  # ✅ ACTUALIZADO
   _render_export_section(data_handler, selected_region, len(reviews_data))
   
   if reviews_data:
-    _render_analysis_section(reviews_data)
+    _render_analysis_section(reviews_data, display_language)  # ✅ ACTUALIZADO
     _render_detailed_data_section(reviews_data)
   else:
-    st.info(f"No hay reseñas disponibles para '{selected_region}'")
+    st.info(f"No hay reseñas disponibles para '{selected_region}' en {display_language}")
 
 def _validate_data_availability(data_handler) -> bool:
   """Valida disponibilidad de datos"""
@@ -589,20 +735,30 @@ def _get_available_regions(data_handler) -> List[str]:
   ]
   return sorted(list(set(region_names)))
 
-def _render_filters_section(region_names: List[str]) -> str:
-  """Renderiza sección de filtros"""
+def _render_filters_section(region_names: List[str]) -> tuple[str, str]:
+  """Renderiza sección de filtros - ACTUALIZADA MULTILENGUAJE"""
   st.subheader("Filtros y Descarga")
   
-  col_filter, col_download = st.columns([3, 1])
+  col_filter1, col_filter2, col_download = st.columns([2, 2, 1])
   
-  with col_filter:
+  with col_filter1:
     selected_region = st.selectbox(
       "Selecciona una región:",
       options=["Todas las regiones"] + region_names,
       key="region_selector_results"
     )
   
-  return selected_region
+  # ✅ NUEVO: Selector de idioma
+  with col_filter2:
+    display_language = st.selectbox(
+      "Idioma de análisis:",
+      options=["all", "english", "spanish", "portuguese", "french", "german"],
+      index=0,
+      help="Idioma para filtrar reseñas analizadas",
+      key="results_language_select"
+    )
+  
+  return selected_region, display_language
 
 def _render_export_section(data_handler, selected_region: str, reviews_count: int) -> None:
   """Renderiza sección de exportación"""
@@ -612,12 +768,17 @@ def _render_export_section(data_handler, selected_region: str, reviews_count: in
     if st.button("Generar Excel", key="main_download_button"):
       handle_excel_export(data_handler, selected_region, reviews_count)
 
-def _render_analysis_section(reviews_data: List[Dict]) -> None:
-  """Renderiza sección principal de análisis"""
+def _render_analysis_section(reviews_data: List[Dict], display_language: str = "all") -> None:
+  """Renderiza sección principal de análisis - ACTUALIZADA MULTILENGUAJE"""
   stats = calculate_sentiment_stats(reviews_data)
   
-  # Métricas clave
+  # ✅ NUEVO: Información de idioma en el encabezado
   st.subheader("Métricas Clave")
+  if display_language == "all":
+    st.caption("📊 Análisis de todas las reseñas en todos los idiomas disponibles")
+  else:
+    st.caption(f"📊 Análisis filtrado para reseñas en: **{display_language.title()}**")
+  
   col1, col2, col3, col4 = st.columns(4)
   
   total_reviews = stats.get("total_reviews", 0)
@@ -629,6 +790,26 @@ def _render_analysis_section(reviews_data: List[Dict]) -> None:
   col2.metric("Reseñas Válidas", f"{valid_analyzed:,}")
   col3.metric("Sentimiento Promedio", f"{avg_sentiment:.2f}/4.0")
   col4.metric("Correlación Rating-IA", f"{alignment_score:.1f}%")
+  
+  # ✅ NUEVO: Desglose por idioma si es "all"
+  if display_language == "all" and reviews_data:
+    st.markdown("#### Desglose por Idioma")
+    language_breakdown = {}
+    for review in reviews_data:
+      if _has_sentiment_analysis(review):
+        lang = review.get("language", "unknown")
+        language_breakdown[lang] = language_breakdown.get(lang, 0) + 1
+    
+    if language_breakdown:
+      lang_cols = st.columns(min(len(language_breakdown), 5))
+      for i, (lang, count) in enumerate(sorted(language_breakdown.items())):
+        if i < len(lang_cols):
+          percentage = (count / valid_analyzed * 100) if valid_analyzed > 0 else 0
+          lang_cols[i].metric(
+            f"{lang.title()}", 
+            f"{count:,}",
+            f"{percentage:.1f}%"
+          )
   
   # Métricas por sentimiento
   st.markdown("---")

@@ -54,7 +54,7 @@ def load_and_process_data():
         for attraction in region.get("attractions", []):
             attraction_name = attraction.get("attraction_name")
             if not attraction_name:
-                attraction_name = attraction.get("place_name", "Atracción Desconocida")
+                attraction_name = attraction.get("attraction_name", "Atracción Desconocida")
 
             for review in attraction.get("reviews", []):
                 review_data = {
