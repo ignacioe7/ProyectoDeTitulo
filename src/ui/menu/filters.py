@@ -247,8 +247,28 @@ def render(data_handler=None):
     current_time_str = (datetime.now(timezone.utc) + timedelta(hours=-3)).strftime('%Y%m%d_%H%M%S')
 
     with col1:
-      # exportación a formato CSV con codificación UTF-8
-      csv_export = df_for_download.to_csv(index=False).encode('utf-8')
+      # DataFrame para limpiar los datos antes de exportar
+      df_for_csv = df_for_download.copy()
+      
+      # Limpia saltos de línea y caracteres que generan problemas
+      text_columns = ['review_text', 'title', 'username', 'attraction_name', 'region_name']
+      for col in text_columns:
+        if col in df_for_csv.columns:
+          df_for_csv[col] = df_for_csv[col].astype(str).str.replace(r'\n', ' ', regex=True)
+          df_for_csv[col] = df_for_csv[col].str.replace(r'\r', ' ', regex=True)
+          df_for_csv[col] = df_for_csv[col].str.replace(r'"', '""', regex=True)  
+          df_for_csv[col] = df_for_csv[col].str.replace(r'\t', ' ', regex=True) 
+          df_for_csv[col] = df_for_csv[col].str.replace(r'\s+', ' ', regex=True).str.strip()
+      
+      # Exportar CSV con configuración específica 
+      csv_export = df_for_csv.to_csv(
+        index=False,
+        encoding='utf-8',
+        quoting=1,  
+        lineterminator='\n', 
+        escapechar=None  
+      ).encode('utf-8')
+      
       st.download_button(
         label="📥 Descargar CSV",
         data=csv_export,
