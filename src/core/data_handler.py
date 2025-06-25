@@ -143,7 +143,6 @@ class DataHandler:
     }
     self.data["regions"].append(new_region)
     return new_region
-
   
   def _process_attraction(self, region_data: Dict, attraction_data: Dict):
       """Procesa una atracción - SOLO URL COMO CLAVE ÚNICA (CORREGIDO)"""
@@ -264,31 +263,48 @@ class DataHandler:
       if "languages" not in attraction:
           attraction["languages"] = {}
       
+      # ✅ CORREGIDO: Calcular valores reales si el idioma no existe
       if language not in attraction["languages"]:
+          # Verificar si hay reseñas existentes en structure antigua
+          existing_reviews_count = 0
+          existing_reviews = []
+          is_previously_scraped = False
+          
+          # Buscar reseñas en estructura antigua que coincidan con el idioma
+          old_reviews = attraction.get("reviews", [])
+          for review in old_reviews:
+              if review.get("language") == language:
+                  existing_reviews.append(review)
+                  existing_reviews_count += 1
+                  is_previously_scraped = True
+          
           attraction["languages"][language] = {
-              "reviews": [],
-              "reviews_count": 0,
-              "stored_reviews": 0,
-              "skipped_duplicates": 0,
-              "previously_scraped": False,
-              "last_scrape_date": None
+              "reviews": existing_reviews,  # ✅ Usar reseñas existentes
+              "reviews_count": english_count if english_count is not None else existing_reviews_count,
+              "stored_reviews": existing_reviews_count,  # ✅ Contar reales
+              "skipped_duplicates": [],
+              "previously_scraped": is_previously_scraped,  # ✅ Calcular real
+              "last_scrape_date": datetime.now(timezone.utc).isoformat() if is_previously_scraped else None
           }
+      else:
+          # ✅ Idioma ya existe, solo actualizar reviews_count si se proporciona
+          if english_count is not None:
+              attraction["languages"][language]["reviews_count"] = english_count
   
-      # ✅ NUEVO: Fusionar reseñas en la estructura multilenguaje
+      # Resto del método permanece igual...
       existing_reviews = attraction["languages"][language].get("reviews", [])
       merged_reviews = self._merge_reviews(existing_reviews, new_reviews)
   
-      # ✅ ACTUALIZADO: Actualizar estructura multilenguaje
       attraction["languages"][language]["reviews"] = merged_reviews
       attraction["languages"][language]["stored_reviews"] = len(merged_reviews)
       attraction["languages"][language]["last_scrape_date"] = datetime.now(timezone.utc).isoformat()
       attraction["languages"][language]["previously_scraped"] = True
       
-      # ✅ SOLO: Mantener scraped_reviews_count para compatibilidad
+      # Calcular total único entre idiomas
       all_unique_reviews = []
       all_unique_hashes = set()
       
-      for lang_data in attraction.get("languages", {}).items():
+      for lang, lang_data in attraction.get("languages", {}).items():
           for review in lang_data.get("reviews", []):
               review_key = self._get_review_key(review)
               if review_key not in all_unique_hashes:
@@ -335,6 +351,35 @@ class DataHandler:
       str(review.get('rating', ''))
     )
     return str(hash(content))
+
+  def update_skipped_duplicates(self, region_name: str, attraction_url: str, 
+                              skipped_ids: List[str], language: str = "english") -> None:
+      """Actualiza IDs de reseñas duplicadas para un idioma específico"""
+      region_data = self.get_region_data(region_name)
+      if not region_data:
+          return
+
+      attraction = self._find_attraction_by_url(region_data, attraction_url)
+      if not attraction:
+          return
+
+      if "languages" not in attraction:
+          attraction["languages"] = {}
+      
+      if language not in attraction["languages"]:
+          attraction["languages"][language] = {
+              "reviews": [],
+              "reviews_count": 0,
+              "stored_reviews": 0,
+              "skipped_duplicates": [],
+              "previously_scraped": False,
+              "last_scrape_date": None
+          }
+
+      # Fusionar IDs duplicadas sin repetir
+      existing_skipped = set(attraction["languages"][language].get("skipped_duplicates", []))
+      existing_skipped.update(skipped_ids)
+      attraction["languages"][language]["skipped_duplicates"] = list(existing_skipped)
 
   # ==================== ANÁLISIS DE SENTIMIENTOS ====================
 

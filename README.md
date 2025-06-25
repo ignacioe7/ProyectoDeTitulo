@@ -49,6 +49,7 @@ pip install -r requirements.txt
 ### Ejecutar la aplicación
 ```bash
 streamlit run src/ui/streamlit_app.py
+python -m streamlit run src/ui/streamlit_app.py
 ```
 
 ### Funcionalidades principales
