@@ -5,110 +5,124 @@ from src.core.analyzer import load_analyzer
 from loguru import logger as log
 import pandas as pd
 from datetime import datetime, timezone
-import re
 
+# Idiomas disponibles en el sistema con sus nombres en español
 AVAILABLE_LANGUAGES = {
-    "all": "Todos los idiomas",
-    "spanish": "Español", 
-    "english": "Inglés",
-    "portuguese": "Portugués",
-    "french": "Francés",
-    "german": "Alemán",
-    "italian": "Italiano",
-    "dutch": "Holandés"
+  "all": "Todos los idiomas",
+  "english": "Inglés",
+  "spanish": "Español", 
+  "portuguese": "Portugués",
+  "french": "Francés",
+  "german": "Alemán",
+  "italian": "Italiano",
+  "dutch": "Holandés",
+  "japanese": "Japonés",
+  "chinese": "Chino"
 }
 
+# ================================================================
+# OBTENER TIEMPO RELATIVO
+# ================================================================
+
 def get_relative_time(iso_date_string: str) -> str:
-  """Convierte fecha ISO a tiempo relativo"""
+  # CONVIERTE FECHAS ISO A TEXTO LEGIBLE DE TIEMPO TRANSCURRIDO
   if not iso_date_string or iso_date_string == "Nunca":
     return "Nunca"
   
   try:
-    # Parsear fecha ISO
+    # Normalizar formato de fecha ISO
     if iso_date_string.endswith('Z'):
       iso_date_string = iso_date_string[:-1] + '+00:00'
     
-    # Intentar parsear con diferentes formatos
+    # Parsear fecha con fallback para diferentes formatos
     try:
       past_date = datetime.fromisoformat(iso_date_string)
     except ValueError:
-      # Fallback para formatos sin timezone
       past_date = datetime.fromisoformat(iso_date_string.replace('Z', ''))
       past_date = past_date.replace(tzinfo=timezone.utc)
     
-    # Asegurar que tenga timezone
+    # Garantizar que tenga timezone
     if past_date.tzinfo is None:
       past_date = past_date.replace(tzinfo=timezone.utc)
     
     now = datetime.now(timezone.utc)
     diff = now - past_date
-    
-    # Convertir a segundos totales
     total_seconds = int(diff.total_seconds())
     
+    # Convertir segundos a texto legible
     if total_seconds < 0:
       return "En el futuro"
     elif total_seconds < 60:
-      return f"hace {total_seconds} segundos"
+      return f"Hace {total_seconds} segundos"
     elif total_seconds < 3600:
       minutes = total_seconds // 60
-      return f"hace {minutes} minuto{'s' if minutes != 1 else ''}"
+      return f"Hace {minutes} minuto{'s' if minutes != 1 else ''}"
     elif total_seconds < 86400:
       hours = total_seconds // 3600
-      return f"hace {hours} hora{'s' if hours != 1 else ''}"
+      return f"Hace {hours} hora{'s' if hours != 1 else ''}"
     elif total_seconds < 2592000:  # 30 días
       days = total_seconds // 86400
-      return f"hace {days} día{'s' if days != 1 else ''}"
+      return f"Hace {days} día{'s' if days != 1 else ''}"
     elif total_seconds < 31536000:  # 365 días
       months = total_seconds // 2592000
-      return f"hace {months} mes{'es' if months != 1 else ''}"
+      return f"Hace {months} mes{'es' if months != 1 else ''}"
     else:
       years = total_seconds // 31536000
-      return f"hace {years} año{'s' if years != 1 else ''}"
+      return f"Hace {years} año{'s' if years != 1 else ''}"
       
   except Exception as e:
     log.warning(f"Error parseando fecha: {e}")
     return "Fecha inválida"
 
+# ================================================================
+# OBTENER IDIOMAS DISPONIBLES
+# ================================================================
+
 def get_available_languages_from_data(data_handler) -> List[str]:
-    """Obtiene idiomas disponibles dinámicamente desde los datos"""
-    languages_found = set()
-    languages_found.add("all")  # Siempre incluir opción "todos"
-    
-    for region in data_handler.data.get("regions", []):
-        for attraction in region.get("attractions", []):
-            for lang_code in attraction.get("languages", {}).keys():
-                languages_found.add(lang_code)
-    
-    # Ordenar y convertir a lista con nombres legibles
-    available_languages = ["all"]
-    for lang_code in sorted(languages_found):
-        if lang_code != "all" and lang_code in AVAILABLE_LANGUAGES:
-            available_languages.append(lang_code)
-    
-    return available_languages
+  # EXTRAE DINÁMICAMENTE LOS IDIOMAS DISPONIBLES EN LOS DATOS
+  languages_found = set()
+  languages_found.add("all")  # Opción para mostrar todos los idiomas
+  
+  # Recorrer regiones y atracciones para encontrar idiomas
+  for region in data_handler.data.get("regions", []):
+    for attraction in region.get("attractions", []):
+      for lang_code in attraction.get("languages", {}).keys():
+        languages_found.add(lang_code)
+  
+  # Filtrar solo idiomas conocidos y ordenar
+  available_languages = ["all"]
+  for lang_code in sorted(languages_found):
+    if lang_code != "all" and lang_code in AVAILABLE_LANGUAGES:
+      available_languages.append(lang_code)
+  
+  return available_languages
+
+# ================================================================
+# RENDERIZAR PÁGINA PRINCIPAL
+# ================================================================
 
 def render(data_handler):
-  """Renderiza página de análisis de sentimientos"""
+  # RENDERIZA LA INTERFAZ PRINCIPAL DEL ANÁLISIS DE SENTIMIENTOS
   st.header("Análisis de Sentimientos")
   
-  # Verificar estado de análisis
+  # Estado del análisis en curso
   analysis_active = st.session_state.get('analysis_active', False)
   
   st.markdown("---")
 
+  # Validar que el gestor de datos esté disponible
   if data_handler is None:
     st.error("Error crítico: Gestor de datos no disponible")
     log.error("render análisis: data_handler es None")
     return
 
-  # Recargar datos frescos del archivo
+  # Recargar datos actuales del archivo
   try:
     data_handler.reload_data()
   except Exception as e:
     log.warning(f"Error recargando datos: {e}")
 
-  # Cargar regiones disponibles desde data_handler
+  # Obtener regiones disponibles para análisis
   regions_data = data_handler.data.get("regions", []) 
   region_names_for_ui = [r.get("region_name") for r in regions_data if r.get("region_name")]
   
@@ -116,21 +130,21 @@ def render(data_handler):
     st.warning("No hay regiones con datos disponibles para analizar")
     return
 
-  # Selector de región - deshabilitar si hay análisis activo
+  # Selector de región (deshabilitado durante análisis)
   selected_region_ui = st.selectbox(
     "Selecciona una región para analizar:",
     options=["Todas las regiones"] + region_names_for_ui,
     disabled=analysis_active
   )
 
-  # Cargar analizador de sentimientos
+  # Verificar que el analizador de sentimientos esté listo
   analyzer_instance = load_analyzer()
   if not analyzer_instance or not analyzer_instance.nlp:
     st.warning("Modelo de análisis de sentimientos no está listo")
     st.caption("Verifica la instalación del modelo multilingual si el problema persiste")
     return
 
-  # Estadísticas antes de analizar - deshabilitar si hay análisis activo
+  # Opción para mostrar estadísticas actuales
   show_stats = st.checkbox(
     "Mostrar estadísticas actuales de análisis", 
     disabled=analysis_active
@@ -140,13 +154,13 @@ def render(data_handler):
     regions_to_stat = region_names_for_ui if selected_region_ui == "Todas las regiones" else [selected_region_ui]
     display_current_stats(data_handler, regions_to_stat)
 
-  # Inicializar estados de sesión
+  # Inicializar estados de sesión si no existen
   if 'analysis_active' not in st.session_state:
     st.session_state.analysis_active = False
   if 'should_stop_analysis' not in st.session_state:
     st.session_state.should_stop_analysis = False
 
-  # Botones de control
+  # Botones de control del análisis
   st.markdown("### Control de Análisis")
   col1, col2 = st.columns(2)
   
@@ -163,7 +177,7 @@ def render(data_handler):
       log.info("Solicitud de detención recibida")
       st.warning("Deteniendo análisis... Por favor espera")
 
-  # Mostrar estado actual
+  # Mostrar estado actual del análisis
   if analysis_active:
     if st.session_state.should_stop_analysis:
       st.warning("Deteniendo análisis... Por favor espera")
@@ -171,62 +185,66 @@ def render(data_handler):
       current_region = st.session_state.get('current_analysis_region', selected_region_ui)
       st.info(f"Análisis activo para: **{current_region}**")
       
-      # Guardar región actual en session_state
+      # Guardar región actual para seguimiento
       st.session_state.current_analysis_region = selected_region_ui
 
   # Ejecutar análisis si está activo
   if analysis_active:
     st.markdown("### Progreso del Análisis")
     
-    # Ejecutar función async usando asyncio.run
+    # Ejecutar función asíncrona de análisis
     asyncio.run(analyze_reviews_ui(data_handler, analyzer_instance, selected_region_ui))
     
-    # Después de que termine el análisis forzar rerun para actualizar UI
+    # Actualizar UI cuando termine el análisis
     if not st.session_state.analysis_active:
       st.rerun()
 
+# ================================================================
+# MOSTRAR ESTADÍSTICAS ACTUALES
+# ================================================================
+
 def display_current_stats(data_handler, region_names_to_show: List[str]):
-  """Muestra estadísticas de reseñas analizadas/no analizadas con fechas relativas - MULTILENGUAJE"""
+  # MUESTRA ESTADÍSTICAS DETALLADAS DE RESEÑAS ANALIZADAS Y PENDIENTES
   
-  # ✅ CORREGIDO: Obtener idiomas disponibles dinámicamente
+  # Obtener idiomas disponibles en los datos
   available_languages = get_available_languages_from_data(data_handler)
   
+  # Configurar selector de idioma si hay múltiples opciones
   if not available_languages or len(available_languages) <= 1:
-      # Si solo hay "all" o está vacío, mostrar todos por defecto
-      display_language = "all"
-      st.markdown("#### Estadísticas Generales")
-      st.info("Mostrando estadísticas de todos los idiomas (no hay idiomas específicos disponibles)")
+    display_language = "all"
+    st.markdown("#### Estadísticas Generales")
+    st.info("Mostrando estadísticas de todos los idiomas (no hay idiomas específicos disponibles)")
   else:
-      # ✅ NUEVO: Selector de idioma para estadísticas
-      st.markdown("#### Estadísticas por Idioma")
-      
-      # Crear opciones legibles para el selectbox
-      language_options = []
-      for lang_code in available_languages:
-          if lang_code in AVAILABLE_LANGUAGES:
-              language_options.append(AVAILABLE_LANGUAGES[lang_code])
-          else:
-              language_options.append(lang_code.title())
-      
-      selected_language_display = st.selectbox(
-          "Seleccionar idioma:",
-          options=language_options,
-          key="stats_language_display_selector"  # ✅ Key única
-      )
-      
-      # Convertir de vuelta a código de idioma
-      display_language = "all"
-      for lang_code, lang_display in AVAILABLE_LANGUAGES.items():
-          if lang_display == selected_language_display:
-              display_language = lang_code
-              break
+    st.markdown("#### Estadísticas por Idioma")
+    
+    # Crear opciones legibles para el selector
+    language_options = []
+    for lang_code in available_languages:
+      if lang_code in AVAILABLE_LANGUAGES:
+        language_options.append(AVAILABLE_LANGUAGES[lang_code])
+      else:
+        language_options.append(lang_code.title())
+    
+    selected_language_display = st.selectbox(
+      "Seleccionar idioma:",
+      options=language_options,
+      key="stats_language_display_selector"
+    )
+    
+    # Convertir nombre legible de vuelta a código de idioma
+    display_language = "all"
+    for lang_code, lang_display in AVAILABLE_LANGUAGES.items():
+      if lang_display == selected_language_display:
+        display_language = lang_code
+        break
   
-  # Recargar datos frescos antes de mostrar estadísticas
+  # Recargar datos antes de calcular estadísticas
   try:
-      data_handler.reload_data()
+    data_handler.reload_data()
   except Exception as e:
-      log.warning(f"Error recargando datos para estadísticas: {e}")
+    log.warning(f"Error recargando datos para estadísticas: {e}")
   
+  # Procesar estadísticas por región
   stats = []
   all_regions_data = data_handler.data.get("regions", [])
 
@@ -239,18 +257,18 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
     not_analyzed_count = 0
     language_breakdown = {}
     
+    # Procesar cada atracción en la región
     for attraction_item in region_data_item.get("attractions", []):
-      # ✅ NUEVO: Procesar estructura multilenguaje
       if display_language == "all":
-        # Procesar todas las reseñas de todos los idiomas
-        old_reviews = attraction_item.get("reviews", [])  # Compatibilidad con estructura antigua
+        # Procesar estructura antigua (compatibilidad)
+        old_reviews = attraction_item.get("reviews", [])
         for review_item in old_reviews:
           if review_item.get("sentiment"):
             analyzed_count += 1
           else:
             not_analyzed_count += 1
         
-        # Procesar nueva estructura multilenguaje
+        # Procesar estructura multilenguaje
         languages_data = attraction_item.get("languages", {})
         for lang, lang_data in languages_data.items():
           for review_item in lang_data.get("reviews", []):
@@ -262,7 +280,7 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
             else:
               not_analyzed_count += 1
       else:
-        # Procesar solo idioma específico
+        # Procesar solo un idioma específico
         language_data = attraction_item.get("languages", {}).get(display_language, {})
         for review_item in language_data.get("reviews", []):
           if review_item.get("sentiment"):
@@ -270,14 +288,14 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
           else:
             not_analyzed_count += 1
     
-    # Obtener fecha de último análisis y convertir a tiempo relativo
+    # Obtener fecha del último análisis
     last_analyzed_date = region_data_item.get("last_analyzed_date", "Nunca")
     relative_time = get_relative_time(last_analyzed_date)
     
-    # ✅ NUEVO: Información de desglose de idiomas
+    # Generar información de desglose por idiomas
     idiomas_info = ""
     if display_language == "all" and language_breakdown:
-      # Agrupar por idioma
+      # Agrupar estadísticas por idioma
       lang_summary = {}
       for key, count in language_breakdown.items():
         lang = key.replace("_analyzed", "").replace("_pending", "")
@@ -289,6 +307,7 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
         else:
           lang_summary[lang]["pending"] = count
       
+      # Crear texto de resumen por idioma
       idiomas_list = []
       for lang, counts in sorted(lang_summary.items()):
         total = counts["analyzed"] + counts["pending"]
@@ -299,6 +318,7 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
       if len(lang_summary) > 3:
         idiomas_info += f" (+{len(lang_summary)-3} más)"
     
+    # Agregar estadísticas de la región
     stats.append({
       "Región": current_region_name_spanish,
       "Analizadas": analyzed_count,
@@ -306,13 +326,14 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
       "Total": analyzed_count + not_analyzed_count,
       "Cobertura": f"{(analyzed_count / (analyzed_count + not_analyzed_count) * 100):.1f}%" if (analyzed_count + not_analyzed_count) > 0 else "0%",
       "Último análisis": relative_time,
-      "Idiomas": idiomas_info if display_language == "all" else f"{analyzed_count}/{analyzed_count + not_analyzed_count} en {display_language}"  # ✅ NUEVO
+      "Idiomas": idiomas_info if display_language == "all" else f"{analyzed_count}/{analyzed_count + not_analyzed_count} en {display_language}"
     })
     
+  # Mostrar tabla de estadísticas si hay datos
   if stats:
-    # ✅ NUEVO: Configuración de columnas actualizada
     df = pd.DataFrame(stats)
     
+    # Configuración de columnas para la tabla
     column_config = {
       "Región": st.column_config.TextColumn("Región", width="medium"),
       "Analizadas": st.column_config.NumberColumn("Analizadas", width="small"),
@@ -322,6 +343,7 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
       "Último análisis": st.column_config.TextColumn("Último análisis", width="medium"),
     }
     
+    # Configurar columna de idiomas según el contexto
     if display_language == "all":
       column_config["Idiomas"] = st.column_config.TextColumn(
         "Desglose por Idioma", 
@@ -342,7 +364,7 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
       column_config=column_config
     )
     
-    # ✅ NUEVO: Métricas resumen
+    # Métricas resumen en columnas
     col1, col2, col3, col4 = st.columns(4)
     total_analyzed = sum(item["Analizadas"] for item in stats)
     total_pending = sum(item["Pendientes"] for item in stats)
@@ -354,7 +376,7 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
     col3.metric("Pendientes", f"{total_pending:,}")
     col4.metric("Cobertura Global", f"{overall_coverage:.1f}%")
     
-    # ✅ NUEVO: Progreso visual
+    # Barra de progreso visual
     if total_reviews > 0:
       st.progress(overall_coverage / 100)
       if display_language == "all":
@@ -365,23 +387,27 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
   else:
     st.info("No hay datos de análisis disponibles para las regiones seleccionadas")
 
+# ================================================================
+# EJECUTAR ANÁLISIS DE UNA REGIÓN
+# ================================================================
+
 async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanish: str, progress_callback=None, stop_event=None) -> Tuple[bool, int]:
-  """Analiza una región específica y actualiza data_handler - MULTILENGUAJE"""
+  # PROCESA TODAS LAS RESEÑAS PENDIENTES DE UNA REGIÓN ESPECÍFICA
   reviews_processed_count = 0
   try:
-    # Verificar si se debe detener
+    # Verificar si se solicitó detener el análisis
     if stop_event and stop_event.is_set():
       log.info(f"Análisis detenido antes de procesar región '{region_name_spanish}'")
       return False, 0
     
-    # Obtener datos de la región usando el nombre en español
+    # Obtener datos de la región
     region_data_to_analyze = data_handler.get_region_data(region_name_spanish)
 
     if not region_data_to_analyze:
       log.error(f"Región '{region_name_spanish}' no encontrada")
       return False, 0
 
-    # ✅ NUEVO: Contar reseñas pendientes en estructura multilenguaje
+    # Contar reseñas pendientes de análisis
     pending_reviews_in_region = 0
     for attraction in region_data_to_analyze.get("attractions", []):
       # Compatibilidad con estructura antigua
@@ -390,7 +416,7 @@ async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanis
         if not review.get("sentiment"):
           pending_reviews_in_region += 1
       
-      # Nueva estructura multilenguaje
+      # Estructura multilenguaje
       languages_data = attraction.get("languages", {})
       for lang, lang_data in languages_data.items():
         for review in lang_data.get("reviews", []):
@@ -401,23 +427,22 @@ async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanis
       log.info(f"Región '{region_name_spanish}' no tiene reseñas pendientes")
       return True, 0
 
-    # Crear callback que actualice el progreso de la UI y verifique detención
+    # Callback para actualizar progreso y verificar detención
     def ui_progress_callback(progress_value, status_text):
-      # Verificar si se debe detener
       if stop_event and stop_event.is_set():
         return False  # Señal para detener
       
       if progress_callback:
         progress_callback(progress_value, status_text)
-      return True  # Continuar
+      return True  # Continuar procesando
 
-    # ✅ ACTUALIZADO: analyzer.analyze_region_reviews con callback de progreso
+    # Ejecutar análisis de la región
     analyzed_region_data_dict = await analyzer.analyze_region_all_languages_ui(
       region_data_to_analyze, 
       progress_callback=ui_progress_callback
     )
 
-    # Verificar si se detuvo durante el análisis
+    # Verificar si se detuvo durante el procesamiento
     if stop_event and stop_event.is_set():
       log.info(f"Análisis detenido durante procesamiento de región '{region_name_spanish}'")
       return False, 0
@@ -428,11 +453,9 @@ async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanis
     
     # Actualizar fecha de último análisis
     current_time = datetime.now(timezone.utc).isoformat()
-    
-    # Actualizar fecha de último análisis en la región
     data_handler.update_region_analysis_date(region_name_spanish, current_time)
 
-    # ✅ ACTUALIZADO: Actualizar datos en data_handler
+    # Guardar datos actualizados
     data_handler.update_region_attractions(region_name_spanish, analyzed_region_data_dict["attractions"])
     await data_handler.save_data()
     
@@ -444,13 +467,18 @@ async def run_analysis_for_one_region(data_handler, analyzer, region_name_spanis
     log.error(f"Error analizando '{region_name_spanish}': {e}")
     return False, reviews_processed_count
 
+# ================================================================
+# MANEJAR ANÁLISIS CON INTERFAZ
+# ================================================================
+
 async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
-  """Maneja el proceso de análisis con feedback en UI y barra de progreso funcional - MULTILENGUAJE"""
+  # COORDINA EL PROCESO COMPLETO DE ANÁLISIS CON FEEDBACK VISUAL
   
-  # Crear evento de detención
+  # Evento para coordinar la detención del análisis
   stop_event = asyncio.Event()
   
   try:
+    # Determinar regiones a procesar
     regions_to_process_names_spanish = []
     if selected_region_ui == "Todas las regiones":
       regions_to_process_names_spanish = data_handler.get_regions_with_data()
@@ -461,7 +489,7 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
       st.warning("No hay regiones seleccionadas o válidas para analizar")
       return
 
-    # Función para verificar detención en bucle
+    # Tarea para verificar señales de detención
     async def check_stop_signal():
       while not stop_event.is_set():
         if st.session_state.get('should_stop_analysis', False):
@@ -473,19 +501,19 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
     # Ejecutar verificación de detención en paralelo
     check_task = asyncio.create_task(check_stop_signal())
 
-    # ✅ NUEVO: Contar total de reseñas pendientes en estructura multilenguaje
+    # Contar total de reseñas pendientes
     total_reviews_to_analyze_overall = 0
     for region_name_iter_spanish in regions_to_process_names_spanish:
       region_data_iter = data_handler.get_region_data(region_name_iter_spanish)
       if region_data_iter:
         for attraction_iter in region_data_iter.get("attractions", []):
-          # Compatibilidad con estructura antigua
+          # Estructura antigua
           old_reviews = attraction_iter.get("reviews", [])
           for review_iter in old_reviews:
             if not review_iter.get("sentiment"):
               total_reviews_to_analyze_overall += 1
           
-          # Nueva estructura multilenguaje
+          # Estructura multilenguaje
           languages_data = attraction_iter.get("languages", {})
           for lang, lang_data in languages_data.items():
             for review_iter in lang_data.get("reviews", []):
@@ -497,40 +525,40 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
       display_current_stats(data_handler, regions_to_process_names_spanish)
       return
 
-    # Crear elementos de progreso
+    # Elementos de progreso en la UI
     progress_bar = st.progress(0.0)
     status_text = st.empty()
     
-    # Variables para tracking de progreso
+    # Variables para seguimiento del progreso
     processed_reviews_count_overall = 0
     current_region_index = 0
     num_total_regions_to_process = len(regions_to_process_names_spanish)
     
+    # Función para actualizar el progreso general
     def update_overall_progress(region_progress, region_status):
-      """Callback para actualizar progreso general"""
       nonlocal processed_reviews_count_overall, current_region_index
       
-      # Calcular progreso general basado en regiones completadas + progreso de región actual
+      # Calcular progreso basado en regiones completadas más progreso actual
       region_weight = 1.0 / num_total_regions_to_process
       overall_progress = (current_region_index * region_weight) + (region_progress * region_weight)
       
-      # Actualizar barra de progreso
+      # Actualizar elementos de UI
       progress_bar.progress(min(1.0, overall_progress))
       
-      # Actualizar texto de estado
       region_name = regions_to_process_names_spanish[current_region_index] if current_region_index < len(regions_to_process_names_spanish) else "Completado"
       status_text.text(
         f"Región {current_region_index + 1}/{num_total_regions_to_process}: {region_name}\n"
         f"{region_status}\n"
         f"Progreso general: {overall_progress:.1%}\n"
-        f"Reseñas pendientes: {total_reviews_to_analyze_overall}"  # ✅ NUEVO
+        f"Reseñas pendientes (todos los idiomas): {total_reviews_to_analyze_overall}"
       )
     
     try:
-      status_text.text(f"Preparando análisis... {total_reviews_to_analyze_overall} reseñas en total (todos los idiomas)")  # ✅ ACTUALIZADO
+      status_text.text(f"Preparando análisis... {total_reviews_to_analyze_overall} reseñas en total (todos los idiomas)")
       
+      # Procesar cada región
       for i, current_region_name_spanish in enumerate(regions_to_process_names_spanish):
-        # Verificar si se debe detener
+        # Verificar señal de detención
         if stop_event.is_set():
           log.info("Análisis detenido por solicitud del usuario")
           break
@@ -541,7 +569,7 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
         def region_progress_callback(progress, status):
           update_overall_progress(progress, status)
         
-        # Llamar a la función de análisis para la región actual
+        # Procesar región actual
         success, num_processed_in_call = await run_analysis_for_one_region(
           data_handler, 
           analyzer, 
@@ -558,19 +586,19 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
             break
           st.error(f"Error analizando '{current_region_name_spanish}' Continuando...")
       
-      # Progreso final
+      # Completar barra de progreso
       progress_bar.progress(1.0)
       
-      # ✅ ACTUALIZADO: Mensaje final con información multilenguaje
+      # Mensaje final según el resultado
       if stop_event.is_set():
         final_message = (
-          f"Análisis DETENIDO por el usuario!\n"
+          f"Análisis DETENIDO por el usuario\n"
           f"Regiones procesadas: {current_region_index}/{num_total_regions_to_process}\n"
           f"Total reseñas procesadas (todos los idiomas): {processed_reviews_count_overall}"
         )
         st.warning(final_message)
       else:
-        final_message = f"Análisis completado! Total reseñas procesadas (todos los idiomas): {processed_reviews_count_overall}"
+        final_message = f"Análisis completado - Total reseñas procesadas (todos los idiomas): {processed_reviews_count_overall}"
         if processed_reviews_count_overall == total_reviews_to_analyze_overall:
           st.success(final_message)
         else:
@@ -580,7 +608,7 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
       st.error(f"Error inesperado durante el proceso de análisis: {str(e)}")
       log.error(f"Error en analyze_reviews_ui: {e}")
     finally:
-      # Cancelar tarea de verificación
+      # Limpiar tarea de verificación
       check_task.cancel()
       try:
         await check_task
@@ -591,18 +619,18 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
     st.error(f"Error crítico en análisis: {str(e)}")
     log.error(f"Error crítico en analyze_reviews_ui: {e}")
   finally:
-    # Importante: resetear el estado al finalizar
+    # Resetear estados de sesión
     log.info("Sesión de análisis finalizada")
     st.session_state.analysis_active = False
     st.session_state.should_stop_analysis = False
     
-    # Forzar recarga de datos después del análisis
+    # Recargar datos actualizados
     try:
       data_handler.reload_data()
     except Exception as e:
       log.warning(f"Error recargando datos después del análisis: {e}")
           
-    # Mostrar estadísticas actualizadas
+    # Mostrar estadísticas finales
     regions_to_show = []
     if selected_region_ui == "Todas las regiones":
       regions_to_show = data_handler.get_regions_with_data()
@@ -610,5 +638,3 @@ async def analyze_reviews_ui(data_handler, analyzer, selected_region_ui: str):
       regions_to_show = [selected_region_ui]
     
     display_current_stats(data_handler, regions_to_show)
-
-# ...existing code...

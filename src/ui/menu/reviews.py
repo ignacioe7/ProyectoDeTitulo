@@ -7,8 +7,14 @@ from datetime import datetime, timezone
 from src.core.scraper import ReviewScraper
 from src.utils.constants import CONSOLIDATED_DATA_PATH
 
+# ===============================================================
+# RENDERIZAR PÁGINA PRINCIPAL
+# ===============================================================
+
 def render(data_handler):
-  """Renderiza página de scraping de reseñas"""
+  # RENDERIZA LA PÁGINA DE SCRAPING DE RESEÑAS
+  # Maneja la interfaz principal para extraer reseñas multilenguaje
+  # Incluye controles, progreso y tabla de estado de regiones
   st.header("Scraping de Reseñas")
   
   # Verificar estado de scraping
@@ -64,38 +70,38 @@ def render(data_handler):
   # Control de concurrencia
   st.markdown("### Configuración de Scraping")
   
-  col1, col2, col3 = st.columns(3)
+  col1, col2 = st.columns(2)
   
   with col1:
     max_concurrency = st.slider(
       "Concurrencia máxima:",
       min_value=1,
       max_value=3,
-      value=st.session_state.get('max_concurrency', 2),
+      value=st.session_state.get('max_concurrency', 1),
       help="Número de atracciones a procesar simultáneamente",
       disabled=scraping_active
     )
   
   with col2:
-    max_retries = st.slider(
-      "Máximos reintentos:",
-      min_value=1,
-      max_value=5,
-      value=st.session_state.get('max_retries', 3),
-      help="Número de reintentos cuando falla una página",
-      disabled=scraping_active
-    )
-  
-  with col3:
     target_language = st.selectbox(
       "Idioma objetivo:",
-      options=["english", "spanish", "portuguese", "french", "german"],
+      options=["english", "spanish", "portuguese", "french", "german", "italian", "dutch", "japanese", "chinese"],
+      format_func=lambda x: {
+        "english": "Inglés",
+        "spanish": "Español", 
+        "portuguese": "Portugués",
+        "french": "Francés",
+        "german": "Alemán",
+        "italian": "Italiano",
+        "dutch": "Holandés",
+        "japanese": "Japonés",
+        "chinese": "Chino"
+      }.get(x, x),
       index=0,
       help="Idioma de las reseñas a scrapear",
       disabled=scraping_active,
       key="target_language_select"
     )
-  
 
   # Estado de la aplicación en session_state
   if 'scraping_active' not in st.session_state:
@@ -115,19 +121,12 @@ def render(data_handler):
           st.session_state.scraping_active = True
           st.session_state.should_stop = False
           st.session_state.max_concurrency = max_concurrency
-          st.session_state.max_retries = max_retries
-          # ✅ CORREGIDO: Guardar el idioma objetivo sin conflicto con el widget
-          st.session_state.scraping_target_language = target_language  # ✅ CAMBIADO nombre de key
+          # Guardar el idioma objetivo sin conflicto con el widget
+          st.session_state.scraping_target_language = target_language
           log.info(f"Iniciando scraping para {selected_region_name_ui} en idioma {target_language}")
           st.rerun()
         else:
           ui_status_placeholder.warning("Selecciona una región válida")
-  
-  """ with col2:
-    if st.button("Detener", disabled=not scraping_active, key="stop_button"):
-      st.session_state.should_stop = True
-      log.info("Solicitando detención de scraping")
-      ui_status_placeholder.warning("Deteniendo scraping... Por favor espera") """
   
   # Mostrar estado actual solo si está activo
   if scraping_active:
@@ -165,8 +164,14 @@ def render(data_handler):
       time.sleep(0.5)
       st.rerun()
 
+# ===============================================================
+# OBTENER TIEMPO TRANSCURRIDO
+# ===============================================================
+
 def _get_time_ago(date_string):
-  """Convierte una fecha a formato 'hace X tiempo'"""
+  # CONVIERTE UNA FECHA A FORMATO 'HACE X TIEMPO'
+  # Parsea diferentes formatos de fecha y calcula tiempo transcurrido
+  # Retorna texto legible en español del tiempo relativo
   if not date_string or date_string == "-":
     return "Nunca"
   
@@ -214,15 +219,33 @@ def _get_time_ago(date_string):
     log.warning(f"Error parseando fecha '{date_string}': {e}")
     return "Fecha inválida"
 
+# ===============================================================
+# RENDERIZAR TABLA DE REGIONES SCRAPEADAS
+# ===============================================================
+
 def _render_scraped_regions_table(data_handler, scraped_regions):
-  """Muestra tabla con regiones que tienen atracciones scrapeadas - MEJORADA MULTILENGUAJE"""
+  # MUESTRA TABLA CON REGIONES QUE TIENEN ATRACCIONES SCRAPEADAS
+  # Soporte completo para estadísticas multilenguaje
+  # Incluye métricas y progreso visual del scraping de reseñas
   st.markdown("---")
   st.subheader("Estado de Regiones para Scraping de Reseñas")
   
-  # ✅ NUEVO: Selector de idioma para visualización de stats
+  # Selector de idioma para visualización de stats
   display_language = st.selectbox(
     "Ver estadísticas para idioma:",
-    options=["all", "english", "spanish", "portuguese", "french", "german"],
+    options=["all", "english", "spanish", "portuguese", "french", "german", "italian", "dutch", "japanese", "chinese"],
+    format_func=lambda x: {
+      "all": "Todos los idiomas",
+      "english": "Inglés",
+      "spanish": "Español", 
+      "portuguese": "Portugués",
+      "french": "Francés",
+      "german": "Alemán",
+      "italian": "Italiano",
+      "dutch": "Holandés",
+      "japanese": "Japonés",
+      "chinese": "Chino"
+    }.get(x, x),
     index=0,
     help="Idioma para mostrar estadísticas de reseñas",
     key="stats_language_select"
@@ -249,26 +272,24 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
     last_attractions_scrape = region.get("last_attractions_scrape_date", "")
     scraping_date_relative = _get_time_ago(last_attractions_scrape)
     
-    # ✅ NUEVO: Calcular estadísticas multilenguaje
+    # Calcular estadísticas multilenguaje
     total_reviews = 0
     attractions_with_reviews = 0
     language_breakdown = {}
     
     for attraction in attractions:
-      # ✅ NUEVO: Soporte para estructura multilenguaje
+      # Soporte para estructura multilenguaje
       if display_language == "all":
         # Mostrar total de todas las reseñas únicas
-        all_reviews = attraction.get("reviews", [])
-        if all_reviews:
-          total_reviews += len(all_reviews)
-          attractions_with_reviews += 1
-        
-        # Contar por idioma
         languages_data = attraction.get("languages", {})
         for lang, lang_data in languages_data.items():
           lang_reviews = len(lang_data.get("reviews", []))
           if lang_reviews > 0:
             language_breakdown[lang] = language_breakdown.get(lang, 0) + lang_reviews
+            total_reviews += lang_reviews
+        
+        if any(len(lang_data.get("reviews", [])) > 0 for lang_data in languages_data.values()):
+          attractions_with_reviews += 1
       else:
         # Mostrar solo para idioma específico
         language_data = attraction.get("languages", {}).get(display_language, {})
@@ -291,7 +312,7 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
         estado_reseñas = f"Sin reseñas en {display_language}"
       progreso_reseñas = f"0/{attraction_count}"
     
-    # ✅ NUEVO: Agregar desglose de idiomas
+    # Agregar desglose de idiomas
     idiomas_info = ""
     if display_language == "all" and language_breakdown:
       idiomas_list = [f"{lang}: {count}" for lang, count in sorted(language_breakdown.items())]
@@ -306,20 +327,20 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
       "Estado": estado_reseñas,
       "Progreso": progreso_reseñas,
       "Reseñas": total_reviews,
-      "Idiomas": idiomas_info if display_language == "all" else display_language  # ✅ NUEVO
+      "Idiomas": idiomas_info if display_language == "all" else display_language 
     })
   
   if table_data:
     df = pd.DataFrame(table_data)
     
-    # ✅ NUEVO: Configuración de columnas actualizada
+    # Configuración de columnas actualizada
     column_config = {
       "Región": st.column_config.TextColumn("Región", width="medium"),
       "Atracciones": st.column_config.NumberColumn("Atracciones", width="small"),
       "Scrapeado": st.column_config.TextColumn("Scrapeado", width="medium"),
       "Estado": st.column_config.TextColumn("Estado", width="medium"),
       "Progreso": st.column_config.TextColumn("Progreso", width="small"),
-      "Reseñas": st.column_config.NumberColumn("Reseñas", format="%d", width="small"),
+      "Reseñas": st.column_config.NumberColumn("Reseñas", width="small"),
     }
     
     if display_language == "all":
@@ -337,7 +358,7 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
     
     st.dataframe(df, use_container_width=True, hide_index=True, column_config=column_config)
     
-    # ✅ MEJORADO: Métricas resumen con info de idiomas
+    # Métricas resumen con info de idiomas
     col1, col2, col3, col4 = st.columns(4)
     total_regions = len(scraped_regions)
     total_attractions = sum(len(r.get("attractions", [])) for r in scraped_regions)
@@ -360,7 +381,7 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
       coverage = (attractions_with_lang / total_attractions * 100) if total_attractions > 0 else 0
       col4.metric(f"Cobertura {display_language}", f"{coverage:.1f}%")
     
-    # ✅ MEJORADO: Progreso visual
+    # Progreso visual
     regions_with_reviews = len([item for item in table_data if item["Reseñas"] > 0])
     if total_regions > 0:
       reviews_progress = (regions_with_reviews / total_regions) * 100
@@ -372,8 +393,14 @@ def _render_scraped_regions_table(data_handler, scraped_regions):
   else:
     st.info("No hay datos de regiones para mostrar")
 
+# ===============================================================
+# EJECUTAR SESIÓN DE SCRAPING
+# ===============================================================
+
 def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status_placeholder, progress_bar, status_text):
-  """Maneja sesión de scraping usando asyncio - ACTUALIZADA MULTILENGUAJE"""
+  # MANEJA SESIÓN DE SCRAPING USANDO ASYNCIO
+  # Coordinación completa con soporte multilenguaje
+  # Actualiza progreso y guarda datos durante el proceso
   async def async_scraping():
     try:
       stop_event = asyncio.Event()
@@ -391,21 +418,21 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
         ui_status_placeholder.warning(f"No hay atracciones en '{selected_region_name_ui}' para scrapear")
         return
       
-      # ✅ CORREGIDO: Usar la key correcta del session state
-      target_language = st.session_state.get('scraping_target_language', 'english')  # ✅ CAMBIADO
+      # Usar la key correcta del session state
+      target_language = st.session_state.get('scraping_target_language', 'english')
       max_concurrency = st.session_state.get('max_concurrency', 1)
       max_retries = st.session_state.get('max_retries', 3)
       
       log.info(f"Scraping {total_attractions} atracciones en {selected_region_name_ui} para idioma: {target_language}")
       
-      # ✅ NUEVO: Pasar idioma objetivo al scraper
+      # Pasar idioma objetivo al scraper
       scraper = ReviewScraper(
         max_retries=max_retries,
         max_concurrency=max_concurrency,
         json_output_filepath=str(CONSOLIDATED_DATA_PATH),
         stop_event=stop_event,
         inter_attraction_base_delay=2.0,
-        target_language=target_language  # ✅ NUEVO
+        target_language=target_language
       )
       
       async with scraper:
@@ -421,7 +448,7 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
           progress_value = current_attraction_index / total_attractions
           progress_bar.progress(progress_value)
           
-          # ✅ ACTUALIZADO: Mensajes de estado más específicos para idiomas
+          # Mensajes de estado más específicos para idiomas
           if f"no_{target_language}_reviews" in status:
             status_icon = "○"
             status_msg = f"Sin reseñas en {target_language}"
@@ -441,7 +468,7 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
             status_icon = "⚠"
             status_msg = f"Sin nuevas reseñas en {target_language}"
           
-          # ✅ ACTUALIZADO: UI con información de idioma
+          # UI con información de idioma
           status_text.text(
             f"Progreso: {current_attraction_index}/{total_attractions} atracciones\n"
             f"Procesando: {attraction_name}\n"
@@ -465,11 +492,11 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
         try:
           log.info(f"Iniciando scraping con {len(attractions_data_for_region)} atracciones para {target_language}")
           
-          # ✅ ACTUALIZADO: Pasar idioma objetivo
+          # Pasar idioma objetivo
           results = await scraper.scrape_multiple_attractions(
             attractions_data_for_region, 
             selected_region_name_ui,
-            target_language=target_language,  # ✅ NUEVO
+            target_language=target_language,
             attraction_callback=attraction_update_callback,
             stop_event=stop_event
           )
@@ -485,7 +512,7 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
               if newly_scraped > 0 or "completed" in result.get("scrape_status", ""):
                 total_successfully_processed += 1
           
-          # ✅ ACTUALIZADO: Mensajes finales con información de idioma
+          # Mensajes finales con información de idioma
           if st.session_state.get('should_stop', False) or stop_event.is_set():
             final_message = (
               f"Scraping DETENIDO por el usuario\n"
@@ -519,7 +546,7 @@ def run_review_scraping_session(data_handler, selected_region_name_ui, ui_status
       log.info("Sesión de scraping finalizada")
       st.session_state.scraping_active = False
       st.session_state.should_stop = False
-      # ✅ NUEVO: Limpiar el idioma objetivo cuando termine
+      # Limpiar el idioma objetivo cuando termine
       if 'scraping_target_language' in st.session_state:
         del st.session_state.scraping_target_language
   

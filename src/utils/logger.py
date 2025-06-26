@@ -2,8 +2,15 @@ from loguru import logger
 import sys
 from pathlib import Path
 
+# ===============================================================
+# CONFIGURAR LOGGING
+# ===============================================================
+
 def setup_logging():
-  """configura logging para consola y archivo"""
+  # CONFIGURA LOGGING PARA CONSOLA Y ARCHIVO
+  # Establece niveles diferentes para consola (INFO) y archivo (DEBUG)
+  # Crea rotacion automatica y compresion de logs antiguos
+  
   # crear directorio logs si no existe
   log_dir = Path("logs")
   log_dir.mkdir(exist_ok=True)

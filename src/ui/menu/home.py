@@ -1,27 +1,33 @@
 import streamlit as st
 
+# ===============================================================
+# RENDERIZAR PÁGINA DE INICIO
+# ===============================================================
+
 def render():
-  """renderiza la pagina de inicio"""
-  st.title("🌟 Análisis de Sentimientos TripAdvisor")
+  # RENDERIZA LA PÁGINA DE INICIO
+  # Muestra información general del sistema y flujo de trabajo
+  # Incluye características principales y guías de uso
+  st.title("Análisis de Sentimientos TripAdvisor")
   st.markdown("---") 
   
   # intro del proyecto
-  st.header("🎯 Bienvenido al Sistema")
+  st.header("Bienvenido al Sistema")
   st.write("Sistema completo para extraer y analizar reseñas de atracciones turísticas")
   
   # caracteristicas principales
-  st.subheader("🚀 Características Principales")
+  st.subheader("Características Principales")
   
   col1, col2 = st.columns(2)
   
   with col1:
     st.markdown("""
-    **📍 Scraping de Atracciones:**
+    **Scraping de Atracciones:**
     - Extrae atracciones por región
     - Configurable por tipo de lugar
     - Manejo automático de errores
     
-    **📝 Scraping de Reseñas:**
+    **Scraping de Reseñas:**
     - Reseñas en inglés únicamente
     - Control de concurrencia
     - Pausa inteligente anti-bloqueo
@@ -29,19 +35,19 @@ def render():
   
   with col2:
     st.markdown("""
-    **🤖 Análisis de Sentimientos:**
+    **Análisis de Sentimientos:**
     - IA para clasificar texto
     - Procesamiento por lotes
     - Métricas detalladas
     
-    **📊 Visualización:**
+    **Visualización:**
     - Gráficos comparativos
     - Exportación a Excel
     - Filtros por región
     """)
   
   # flujo de trabajo
-  st.subheader("🔄 Flujo de Trabajo")
+  st.subheader("Flujo de Trabajo")
   st.markdown("""
   1. **Scraping de Atracciones** → Obtener lista de lugares
   2. **Scraping de Reseñas** → Extraer comentarios de usuarios  
@@ -51,5 +57,5 @@ def render():
   
   # instrucciones
   st.markdown("---")
-  st.info("💡 **Tip:** Usa el menú lateral para navegar entre módulos")
-  st.warning("⚠️ **Importante:** Solo un proceso puede estar activo a la vez")
+  st.info("Tip: Usa el menú lateral para navegar entre módulos")
+  st.warning("Importante: Solo un proceso puede estar activo a la vez")

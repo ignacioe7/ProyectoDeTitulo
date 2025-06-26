@@ -5,8 +5,14 @@ from datetime import datetime, timezone
 from src.core.scraper import AttractionScraper
 from loguru import logger as log
 
+# ===============================================================
+# RENDERIZAR PÁGINA PRINCIPAL
+# ===============================================================
+
 def render(data_handler):
-  """Renderiza la página de scraping de atracciones"""
+  # RENDERIZA LA PÁGINA DE SCRAPING DE ATRACCIONES
+  # Maneja la interfaz principal para extraer datos de atracciones
+  # Incluye controles, progreso y tabla de estado de regiones
   st.header("Scraping de Atracciones")
   st.markdown("---")
   
@@ -37,8 +43,14 @@ def render(data_handler):
   # Mostrar tabla de estado de regiones
   _render_regions_table(data_handler, region_configs)
 
+# ===============================================================
+# OBTENER CONFIGURACIONES DE REGIONES
+# ===============================================================
+
 def _get_region_configs(data_handler):
-  """Obtiene configuraciones de regiones disponibles"""
+  # OBTIENE CONFIGURACIONES DE REGIONES DISPONIBLES
+  # Prioriza datos de configuración sobre datos ya scrapeados
+  # Retorna diccionario con regiones y sus URLs configuradas
   # Priorizar regions_data (configuración)
   if hasattr(data_handler, 'regions_data') and data_handler.regions_data:
     return data_handler.regions_data
@@ -53,8 +65,14 @@ def _get_region_configs(data_handler):
   
   return None
 
+# ===============================================================
+# RENDERIZAR CONTROLES DE SCRAPING
+# ===============================================================
+
 def _render_scraping_controls(data_handler, region_configs):
-  """Renderiza controles de scraping"""
+  # RENDERIZA CONTROLES DE SCRAPING
+  # Muestra selector de región y botones de inicio/detener
+  # Valida configuración antes de habilitar el scraping
   st.subheader("Iniciar Scraping")
   
   available_regions = sorted(list(region_configs.keys()))
@@ -94,8 +112,14 @@ def _render_scraping_controls(data_handler, region_configs):
       st.session_state.scraping['detener'] = True
       st.warning("Deteniendo scraping...")
 
+# ===============================================================
+# INICIAR SCRAPING
+# ===============================================================
+
 def _start_scraping(region_name: str):
-  """Inicia el proceso de scraping"""
+  # INICIA EL PROCESO DE SCRAPING
+  # Configura el estado de sesión para comenzar extracción
+  # Reinicia contadores y variables de control
   st.session_state.scraping.update({
     'activo': True,
     'detener': False,
@@ -106,8 +130,14 @@ def _start_scraping(region_name: str):
   log.info(f"Iniciando scraping para {region_name}")
   st.rerun()
 
+# ===============================================================
+# MANEJAR SCRAPING ACTIVO
+# ===============================================================
+
 def _handle_active_scraping(data_handler, region_configs):
-  """Maneja el scraping activo"""
+  # MANEJA EL SCRAPING ACTIVO
+  # Coordina la ejecución del scraping con interfaz en tiempo real
+  # Muestra progreso y maneja errores durante el proceso
   region_name = st.session_state.scraping.get('region')
   
   if not region_name:
@@ -150,8 +180,14 @@ def _handle_active_scraping(data_handler, region_configs):
     })
     st.rerun()
 
+# ===============================================================
+# EJECUTAR SCRAPING SINCRONO
+# ===============================================================
+
 def _run_scraping_sync(data_handler, region_configs, region_name, progress_container, status_container):
-  """Ejecuta el scraping de forma síncrona"""
+  # EJECUTA EL SCRAPING DE FORMA SÍNCRONA
+  # Maneja la corrutina asincrona desde contexto sincrono de Streamlit
+  # Actualiza progreso y guarda datos durante el proceso
   
   async def scraping_coroutine():
     # Obtener configuración
@@ -237,8 +273,14 @@ def _run_scraping_sync(data_handler, region_configs, region_name, progress_conta
   # Ejecutar la corrutina
   return asyncio.run(scraping_coroutine())
 
+# ===============================================================
+# OBTENER TIEMPO TRANSCURRIDO
+# ===============================================================
+
 def _get_time_ago(date_string):
-  """Convierte una fecha a formato 'hace X tiempo'"""
+  # CONVIERTE UNA FECHA A FORMATO 'HACE X TIEMPO'
+  # Parsea diferentes formatos de fecha y calcula tiempo transcurrido
+  # Retorna texto legible en español del tiempo relativo
   if not date_string or date_string == "-":
     return "Nunca"
   
@@ -286,8 +328,14 @@ def _get_time_ago(date_string):
     log.warning(f"Error parseando fecha '{date_string}': {e}")
     return "Fecha inválida"
 
+# ===============================================================
+# RENDERIZAR TABLA DE REGIONES
+# ===============================================================
+
 def _render_regions_table(data_handler, region_configs):
-  """Muestra tabla con estado de las regiones"""
+  # MUESTRA TABLA CON ESTADO DE LAS REGIONES
+  # Combina datos de configuración con datos ya scrapeados
+  # Incluye métricas y progreso visual del scraping general
   st.markdown("---")
   st.subheader("Estado de Regiones")
   
@@ -367,8 +415,14 @@ def _render_regions_table(data_handler, region_configs):
   else:
     st.info("No hay datos de regiones para mostrar")
 
+# ===============================================================
+# OBTENER DATOS DE REGIONES SCRAPEADAS
+# ===============================================================
+
 def _get_scraped_regions_data(data_handler):
-  """Obtiene datos de regiones ya scrapeadas"""
+  # OBTIENE DATOS DE REGIONES YA SCRAPEADAS
+  # Extrae información de fecha y conteo de atracciones
+  # Retorna diccionario con estadísticas por región
   scraped_data = {}
   
   if not (hasattr(data_handler, 'data') and data_handler.data):

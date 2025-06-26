@@ -3,49 +3,59 @@ from typing import Optional
 
 @dataclass
 class Review:
-  """Modelo de datos para una reseña con soporte multilenguaje"""
+  # MODELO DE DATOS PARA RESEÑA SIMPLIFICADO
+  # Almacena informacion basica de una reseña de TripAdvisor
+  # Compatible con estructura actual de consolidated_data.json
   review_id: Optional[str] = None  
-  username: str = "Anónimo"  # Nombre de usuario
-  rating: float = 0.0  # Calificación dada por el usuario
-  title: str = "Sin título"  # Título de la reseña
-  review_text: str = ""  # Texto completo de la reseña
-  location: Optional[str] = None  # Ubicación del usuario
-  contributions: Optional[int] = None  # Número de contribuciones del usuario
-  visit_date: Optional[str] = None  # Fecha de la visita
-  written_date: Optional[str] = None  # Fecha en que escribió la reseña
-  companion_type: Optional[str] = None  # Tipo de acompañante
-  language: Optional[str] = None  # Idioma de la reseña (ej: "english", "spanish")
-  original_language: Optional[str] = None  # Idioma original si es traducción
-  is_translated: bool = False  # Indica si es una traducción automática
-  sentiment: Optional[str] = None  # Sentimiento detectado por IA
-  sentiment_score: Optional[float] = None  # Puntuación del sentimiento (0-4)
-  analyzed_at: Optional[str] = None  # Fecha del análisis de sentimiento
-  scraped_at: Optional[str] = None  # Fecha cuando se extrajo la reseña
-  source_url: Optional[str] = None  # URL de donde se extrajo
+  username: str = "Anónimo" # nombre de usuario
+  rating: float = 0.0 # calificacion dada por el usuario 1-5
+  title: str = "Sin título" # titulo de la reseña
+  review_text: str = "" # texto completo de la reseña
+  location: Optional[str] = None # ubicacion del usuario
+  contributions: Optional[int] = None # numero de contribuciones del usuario
+  visit_date: Optional[str] = None # fecha de la visita
+  written_date: Optional[str] = None # fecha en que escribio la reseña
+  companion_type: Optional[str] = None # tipo de acompañante
+  sentiment: Optional[str] = None # sentimiento detectado por IA
+  sentiment_score: Optional[float] = None # puntuacion del sentimiento 0-4
+  analyzed_at: Optional[str] = None # fecha del analisis de sentimiento
+  
+  # ===============================================================
+  # VALIDACIONES POST INICIALIZACION
+  # ===============================================================
   
   def __post_init__(self):
-    """Validaciones y ajustes automáticos después de la inicialización"""
-    # Generar ID si no existe
+    # VALIDACIONES Y AJUSTES AUTOMATICOS DESPUES DE LA INICIALIZACION
+    # Genera ID si no existe y valida valores numericos
     if not self.review_id:
       self.review_id = self._generate_fallback_id()
     
-    # Validar rating
+    # Validar rating entre 0 y 5
     if self.rating < 0:
       self.rating = 0.0
     elif self.rating > 5:
       self.rating = 5.0
   
+  # ===============================================================
+  # GENERAR ID DE RESPALDO
+  # ===============================================================
+  
   def _generate_fallback_id(self) -> str:
-    """Genera un ID de respaldo basado en contenido único"""
+    # GENERA UN ID DE RESPALDO BASADO EN CONTENIDO UNICO
+    # Usa hash MD5 de campos identificadores principales
     import hashlib
     
-    # Usar campos únicos para generar hash
     content = f"{self.username}_{self.written_date}_{self.title[:50]}"
     hash_obj = hashlib.md5(content.encode('utf-8'))
     return f"fallback_{hash_obj.hexdigest()[:12]}"
   
+  # ===============================================================
+  # CONVERTIR A DICCIONARIO
+  # ===============================================================
+  
   def to_dict(self) -> dict:
-    """Convierte la reseña a diccionario para JSON"""
+    # CONVIERTE LA RESEÑA A DICCIONARIO PARA JSON
+    # Retorna todos los campos en formato serializable
     return {
       "review_id": self.review_id,
       "username": self.username,
@@ -57,19 +67,19 @@ class Review:
       "visit_date": self.visit_date,
       "written_date": self.written_date,
       "companion_type": self.companion_type,
-      "language": self.language,
-      "original_language": self.original_language,
-      "is_translated": self.is_translated,
       "sentiment": self.sentiment,
       "sentiment_score": self.sentiment_score,
-      "analyzed_at": self.analyzed_at,
-      "scraped_at": self.scraped_at,
-      "source_url": self.source_url
+      "analyzed_at": self.analyzed_at
     }
+  
+  # ===============================================================
+  # CREAR DESDE DICCIONARIO
+  # ===============================================================
   
   @classmethod
   def from_dict(cls, data: dict) -> 'Review':
-    """Crea una instancia de Review desde un diccionario"""
+    # CREA UNA INSTANCIA DE REVIEW DESDE UN DICCIONARIO
+    # Maneja valores por defecto y conversion de tipos
     return cls(
       review_id=data.get("review_id"),
       username=data.get("username", "Anónimo"),
@@ -81,18 +91,18 @@ class Review:
       visit_date=data.get("visit_date"),
       written_date=data.get("written_date"),
       companion_type=data.get("companion_type"),
-      language=data.get("language"),
-      original_language=data.get("original_language"),
-      is_translated=data.get("is_translated", False),
       sentiment=data.get("sentiment"),
       sentiment_score=data.get("sentiment_score"),
-      analyzed_at=data.get("analyzed_at"),
-      scraped_at=data.get("scraped_at"),
-      source_url=data.get("source_url")
+      analyzed_at=data.get("analyzed_at")
     )
   
+  # ===============================================================
+  # VERIFICAR SI ES DUPLICADA
+  # ===============================================================
+  
   def is_duplicate_of(self, other: 'Review') -> bool:
-    """Determina si esta reseña es duplicada de otra"""
+    # DETERMINA SI ESTA RESEÑA ES DUPLICADA DE OTRA
+    # Compara por ID primero luego por contenido unico
     if not isinstance(other, Review):
       return False
     
@@ -100,15 +110,20 @@ class Review:
     if self.review_id and other.review_id:
       return self.review_id == other.review_id
     
-    # Comparar por contenido único
+    # Comparar por contenido unico
     return (
       self.username == other.username and
       self.written_date == other.written_date and
       self.title == other.title
     )
   
+  # ===============================================================
+  # OBTENER HASH UNICO
+  # ===============================================================
+  
   def get_unique_hash(self) -> str:
-    """Obtiene un hash único para esta reseña"""
+    # OBTIENE UN HASH UNICO PARA ESTA RESEÑA
+    # Usa review_id si es valido sino genera hash de contenido
     if self.review_id and self.review_id.startswith("review_"):
       return self.review_id
     

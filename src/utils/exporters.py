@@ -5,13 +5,21 @@ import pandas as pd
 from loguru import logger as log
 
 class DataExporter:
-  """exporta datos a excel y json"""
+  # EXPORTADOR DE DATOS A EXCEL Y JSON
+  # Maneja conversion de datos consolidados a formatos de archivo
+  # Genera archivos en memoria para descarga directa
 
   def __init__(self):
     pass
 
+  # ===============================================================
+  # EXPORTAR A EXCEL EN BYTES
+  # ===============================================================
+
   def export_to_excel_bytes(self, data_package: Dict) -> Optional[bytes]:
-    """genera excel en memoria y devuelve bytes"""
+    # GENERA EXCEL EN MEMORIA Y DEVUELVE BYTES
+    # Crea dos hojas: resumen de atracciones y detalle de reseñas
+    # Ajusta ancho de columnas automaticamente segun contenido
     if not data_package.get("regions"):
       return None
 
@@ -96,8 +104,14 @@ class DataExporter:
       log.error(f"error generando excel: {e}")
       return None
 
+  # ===============================================================
+  # GUARDAR A JSON
+  # ===============================================================
+
   async def save_to_json(self, data_package: Dict) -> Optional[bytes]:
-    """genera json en memoria y devuelve bytes"""
+    # GENERA JSON EN MEMORIA Y DEVUELVE BYTES
+    # Convierte datos consolidados a formato JSON con encoding UTF-8
+    # Mantiene caracteres especiales y formato legible
     if not data_package.get("regions"):
       return None
 

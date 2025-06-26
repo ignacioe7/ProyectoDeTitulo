@@ -20,9 +20,15 @@ st.set_page_config(
   initial_sidebar_state="expanded"
 )
 
+# ===============================================================
+# OBTENER GESTOR DE DATOS
+# ===============================================================
+
 @st.cache_resource  # cachear para tener una única instancia
 def get_data_handler():
-  """Carga instancia única de DataHandler"""
+  # CARGA INSTANCIA ÚNICA DE DATAHANDLER
+  # Maneja datos consolidados y operaciones de scraping
+  # Se cachea para evitar recargas innecesarias
   try:
     handler = DataHandler()
     log.info("DataHandler cargado")
@@ -32,8 +38,14 @@ def get_data_handler():
     st.error(f"Error crítico DataHandler: {e}")
     return None
 
+# ===============================================================
+# OBTENER INFO DE PROCESOS ACTIVOS
+# ===============================================================
+
 def get_active_process_info():
-  """Info sobre procesos activos"""
+  # OBTIENE INFORMACIÓN SOBRE PROCESOS ACTIVOS
+  # Determina qué operación está ejecutándose actualmente
+  # Retorna tipo, nombre y índice de página activa
   scraping_active = st.session_state.get('scraping_active', False)
   attractions_scraping_active = st.session_state.get('attractions_scraping_active', False)
   analysis_active = st.session_state.get('analysis_active', False)
@@ -47,8 +59,14 @@ def get_active_process_info():
   else:
     return None, None, 0
 
+# ===============================================================
+# INYECTAR CSS DE BLOQUEO
+# ===============================================================
+
 def inject_blocking_css():
-  """Inyecta CSS que bloquea clicks del menú"""
+  # INYECTA CSS QUE BLOQUEA CLICKS DEL MENÚ
+  # Previene navegación durante procesos activos
+  # Deshabilita elementos no activos visualmente
   st.markdown("""
   <style>
   /* Bloquear todos los elementos del menú excepto el activo */
@@ -86,8 +104,14 @@ def inject_blocking_css():
   </style>
   """, unsafe_allow_html=True)
 
+# ===============================================================
+# MOSTRAR ADVERTENCIA ANTI-BOT
+# ===============================================================
+
 def show_anti_bot_warning():
-  """Muestra advertencia sobre sistemas anti-bot"""
+  # MUESTRA ADVERTENCIA SOBRE SISTEMAS ANTI-BOT
+  # Informa sobre detección de TripAdvisor y mejores prácticas
+  # Ayuda a usuarios a evitar bloqueos durante scraping
   st.sidebar.markdown("---")
   st.sidebar.warning(
     "⚠️ **Importante:** Si el scraping se completa muy rápido "

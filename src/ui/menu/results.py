@@ -7,7 +7,7 @@ from loguru import logger as log
 
 from src.utils.exporters import DataExporter
 
-# Configuración de colores
+# Configuración de colores para sentimientos
 SENTIMENT_COLORS = {
   "VERY_NEGATIVE": "#ff4444",
   "NEGATIVE": "#ff8866", 
@@ -16,6 +16,7 @@ SENTIMENT_COLORS = {
   "VERY_POSITIVE": "#44ff66"
 }
 
+# Valores numéricos para sentimientos
 SENTIMENT_VALUES = {
   "VERY_NEGATIVE": 0,
   "NEGATIVE": 1,
@@ -24,6 +25,7 @@ SENTIMENT_VALUES = {
   "VERY_POSITIVE": 4
 }
 
+# Configuración de colores para ratings
 RATING_COLORS = {
   1: "#ff4444",
   2: "#ff8866",
@@ -32,7 +34,21 @@ RATING_COLORS = {
   5: "#44ff66"
 }
 
-# Mapeo de columnas para UI
+# Idiomas disponibles con nombres legibles
+AVAILABLE_LANGUAGES = {
+  "all": "Todos los idiomas",
+  "english": "Inglés",
+  "spanish": "Español", 
+  "portuguese": "Portugués",
+  "french": "Francés",
+  "german": "Alemán",
+  "italian": "Italiano",
+  "dutch": "Holandés",
+  "japanese": "Japonés",
+  "chinese": "Chino"
+}
+
+# Mapeo de columnas para interfaz de usuario
 UI_COLUMN_MAPPING = {
   "region_display_name": "Región",
   "attraction_display_name": "Atracción",
@@ -41,43 +57,47 @@ UI_COLUMN_MAPPING = {
   "sentiment_score": "Score Sentimiento (0-4)",
   "review_text": "Texto Reseña",
   "written_date": "Fecha Escrita",
-  "language": "Idioma",  # ✅ NUEVO
-  "is_translated": "Traducida",  # ✅ NUEVO
-  "username": "Usuario"  # ✅ NUEVO
+  "language": "Idioma",
+  "is_translated": "Traducida",
+  "username": "Usuario"
 }
 
+# ================================================================
+# OBTENER IDIOMAS DISPONIBLES
+# ================================================================
 
-# Funciones de datos
-def get_all_reviews_for_ui(data_handler, selected_region_name: str) -> List[Dict]:
-  """Obtiene reseñas con análisis de sentimiento válido por región"""
-  reviews_for_display = []
+def get_available_languages_from_data(data_handler) -> List[str]:
+  # EXTRAE DINÁMICAMENTE LOS IDIOMAS DISPONIBLES EN LOS DATOS
+  languages_found = set()
+  languages_found.add("all")
   
-  if not hasattr(data_handler, 'data') or not data_handler.data:
-    log.warning("DataHandler sin datos")
-    return reviews_for_display
+  for region in data_handler.data.get("regions", []):
+    for attraction in region.get("attractions", []):
+      # Buscar en estructura multilenguaje
+      for lang_code in attraction.get("languages", {}).keys():
+        languages_found.add(lang_code)
+      
+      # Compatibilidad con estructura antigua
+      old_reviews = attraction.get("reviews", [])
+      for review in old_reviews:
+        lang = review.get("language")
+        if lang:
+          languages_found.add(lang)
   
-  all_regions_data = data_handler.data.get("regions", [])
-  if not all_regions_data:
-    log.warning("Sin datos de regiones")
-    return reviews_for_display
+  # Filtrar solo idiomas conocidos
+  available_languages = ["all"]
+  for lang_code in sorted(languages_found):
+    if lang_code != "all" and lang_code in AVAILABLE_LANGUAGES:
+      available_languages.append(lang_code)
   
-  # Filtrar por región
-  if selected_region_name == "Todas las regiones":
-    reviews_for_display = _get_all_regions_reviews(all_regions_data)
-  else:
-    reviews_for_display = _get_single_region_reviews(all_regions_data, selected_region_name)
-  
-  # Filtrar solo reseñas analizadas
-  analyzed_reviews = [
-    review for review in reviews_for_display 
-    if _has_sentiment_analysis(review)
-  ]
-  
-  log.info(f"Filtradas {len(analyzed_reviews)} reseñas de {len(reviews_for_display)} totales")
-  return analyzed_reviews
+  return available_languages
+
+# ================================================================
+# VALIDAR ANÁLISIS DE SENTIMIENTO
+# ================================================================
 
 def _has_sentiment_analysis(review: Dict) -> bool:
-  """Verifica si reseña tiene análisis válido"""
+  # VERIFICA SI UNA RESEÑA TIENE ANÁLISIS VÁLIDO
   sentiment = review.get("sentiment")
   sentiment_score = review.get("sentiment_score")
   
@@ -96,8 +116,12 @@ def _has_sentiment_analysis(review: Dict) -> bool:
   
   return has_sentiment and has_score
 
+# ================================================================
+# OBTENER RESEÑAS PARA INTERFAZ
+# ================================================================
+
 def get_all_reviews_for_ui(data_handler, selected_region_name: str, display_language: str = "all") -> List[Dict]:
-  """Obtiene reseñas con análisis de sentimiento válido por región e idioma - MULTILENGUAJE"""
+  # OBTIENE RESEÑAS CON ANÁLISIS DE SENTIMIENTO VÁLIDO POR REGIÓN E IDIOMA
   reviews_for_display = []
   
   if not hasattr(data_handler, 'data') or not data_handler.data:
@@ -124,8 +148,12 @@ def get_all_reviews_for_ui(data_handler, selected_region_name: str, display_lang
   log.info(f"Filtradas {len(analyzed_reviews)} reseñas de {len(reviews_for_display)} totales para idioma: {display_language}")
   return analyzed_reviews
 
+# ================================================================
+# EXTRAER RESEÑAS DE TODAS LAS REGIONES
+# ================================================================
+
 def _get_all_regions_reviews(all_regions_data: List[Dict], display_language: str = "all") -> List[Dict]:
-  """Extrae reseñas de todas las regiones con metadatos - MULTILENGUAJE"""
+  # EXTRAE RESEÑAS DE TODAS LAS REGIONES CON METADATOS MULTILENGUAJE
   reviews_for_display = []
   
   for region_item in all_regions_data:
@@ -134,16 +162,17 @@ def _get_all_regions_reviews(all_regions_data: List[Dict], display_language: str
     for attraction_item in region_item.get("attractions", []):
       attraction_name = attraction_item.get("attraction_name", "Atracción Desconocida")
       
-      # ✅ NUEVO: Procesar estructura multilenguaje
+      # Procesar estructura multilenguaje
       if display_language == "all":
         # Incluir reseñas de todos los idiomas
+        
         # Compatibilidad con estructura antigua
         old_reviews = attraction_item.get("reviews", [])
         for review_item in old_reviews:
           review_copy = review_item.copy()
           review_copy["region_display_name"] = region_name
           review_copy["attraction_display_name"] = attraction_name
-          review_copy["language"] = review_copy.get("language", "unknown")  # ✅ NUEVO
+          review_copy["language"] = review_copy.get("language", "unknown")
           reviews_for_display.append(review_copy)
         
         # Nueva estructura multilenguaje
@@ -153,19 +182,21 @@ def _get_all_regions_reviews(all_regions_data: List[Dict], display_language: str
             review_copy = review_item.copy()
             review_copy["region_display_name"] = region_name
             review_copy["attraction_display_name"] = attraction_name
-            review_copy["language"] = lang  # ✅ NUEVO
+            review_copy["language"] = lang
             reviews_for_display.append(review_copy)
       else:
         # Incluir solo reseñas del idioma específico
+        
+        # Nueva estructura multilenguaje
         language_data = attraction_item.get("languages", {}).get(display_language, {})
         for review_item in language_data.get("reviews", []):
           review_copy = review_item.copy()
           review_copy["region_display_name"] = region_name
           review_copy["attraction_display_name"] = attraction_name
-          review_copy["language"] = display_language  # ✅ NUEVO
+          review_copy["language"] = display_language
           reviews_for_display.append(review_copy)
         
-        # Compatibilidad: filtrar reseñas antiguas por idioma si existe el campo
+        # Compatibilidad con estructura antigua
         old_reviews = attraction_item.get("reviews", [])
         for review_item in old_reviews:
           if review_item.get("language") == display_language:
@@ -176,8 +207,12 @@ def _get_all_regions_reviews(all_regions_data: List[Dict], display_language: str
   
   return reviews_for_display
 
+# ================================================================
+# EXTRAER RESEÑAS DE UNA REGIÓN
+# ================================================================
+
 def _get_single_region_reviews(all_regions_data: List[Dict], region_name: str, display_language: str = "all") -> List[Dict]:
-  """Extrae reseñas de una región específica - MULTILENGUAJE"""
+  # EXTRAE RESEÑAS DE UNA REGIÓN ESPECÍFICA MULTILENGUAJE
   reviews_for_display = []
   
   region_data = next(
@@ -193,16 +228,17 @@ def _get_single_region_reviews(all_regions_data: List[Dict], region_name: str, d
   for attraction_item in region_data.get("attractions", []):
     attraction_name = attraction_item.get("attraction_name", "Atracción Desconocida")
     
-    # ✅ NUEVO: Procesar estructura multilenguaje
+    # Procesar estructura multilenguaje
     if display_language == "all":
       # Incluir reseñas de todos los idiomas
+      
       # Compatibilidad con estructura antigua
       old_reviews = attraction_item.get("reviews", [])
       for review_item in old_reviews:
         review_copy = review_item.copy()
         review_copy["region_display_name"] = region_display_name
         review_copy["attraction_display_name"] = attraction_name
-        review_copy["language"] = review_copy.get("language", "unknown")  # ✅ NUEVO
+        review_copy["language"] = review_copy.get("language", "unknown")
         reviews_for_display.append(review_copy)
       
       # Nueva estructura multilenguaje
@@ -212,19 +248,21 @@ def _get_single_region_reviews(all_regions_data: List[Dict], region_name: str, d
           review_copy = review_item.copy()
           review_copy["region_display_name"] = region_display_name
           review_copy["attraction_display_name"] = attraction_name
-          review_copy["language"] = lang  # ✅ NUEVO
+          review_copy["language"] = lang
           reviews_for_display.append(review_copy)
     else:
       # Incluir solo reseñas del idioma específico
+      
+      # Nueva estructura multilenguaje
       language_data = attraction_item.get("languages", {}).get(display_language, {})
       for review_item in language_data.get("reviews", []):
         review_copy = review_item.copy()
         review_copy["region_display_name"] = region_display_name
         review_copy["attraction_display_name"] = attraction_name
-        review_copy["language"] = display_language  # ✅ NUEVO
+        review_copy["language"] = display_language
         reviews_for_display.append(review_copy)
       
-      # Compatibilidad: filtrar reseñas antiguas por idioma si existe el campo
+      # Compatibilidad con estructura antigua
       old_reviews = attraction_item.get("reviews", [])
       for review_item in old_reviews:
         if review_item.get("language") == display_language:
@@ -235,9 +273,12 @@ def _get_single_region_reviews(all_regions_data: List[Dict], region_name: str, d
   
   return reviews_for_display
 
-# Análisis estadístico
+# ================================================================
+# CALCULAR ESTADÍSTICAS DE SENTIMIENTO
+# ================================================================
+
 def calculate_sentiment_stats(reviews_list: List[Dict]) -> Dict:
-  """Calcula estadísticas de sentimiento y ratings"""
+  # CALCULA ESTADÍSTICAS DE SENTIMIENTO Y RATINGS MULTILENGUAJE
   valid_reviews = [review for review in reviews_list if _has_sentiment_analysis(review)]
   
   stats = {
@@ -250,6 +291,7 @@ def calculate_sentiment_stats(reviews_list: List[Dict]) -> Dict:
     },
     "sentiment_scores": [],
     "average_sentiment": 2.0,
+    "language_breakdown": {},
     "rating_sentiment_breakdown": {i: {
       "VERY_NEGATIVE": 0, "NEGATIVE": 0, "NEUTRAL": 0, 
       "POSITIVE": 0, "VERY_POSITIVE": 0
@@ -273,11 +315,19 @@ def calculate_sentiment_stats(reviews_list: List[Dict]) -> Dict:
   
   return stats
 
+# ================================================================
+# PROCESAR RESEÑA PARA ESTADÍSTICAS
+# ================================================================
+
 def _process_review_for_stats(review: Dict, stats: Dict) -> None:
-  """Procesa reseña individual para estadísticas"""
+  # PROCESA RESEÑA INDIVIDUAL PARA ESTADÍSTICAS MULTILENGUAJE
   rating = review.get("rating", 0.0)
   sentiment_value = review.get("sentiment", "")
   sentiment_score = review.get("sentiment_score")
+  language = review.get("language", "unknown")
+  
+  # Conteo por idioma
+  stats["language_breakdown"][language] = stats["language_breakdown"].get(language, 0) + 1
   
   # Procesar sentimiento multilingual
   if sentiment_value in stats["sentiment_summary"]:
@@ -303,8 +353,12 @@ def _process_review_for_stats(review: Dict, stats: Dict) -> None:
     if sentiment_value in stats["sentiment_summary"]:
       stats["rating_sentiment_breakdown"][rating_int][sentiment_value] += 1
 
+# ================================================================
+# NORMALIZAR SENTIMIENTO
+# ================================================================
+
 def _normalize_sentiment(sentiment_value) -> Optional[str]:
-  """Normaliza valores de sentimiento para compatibilidad"""
+  # NORMALIZA VALORES DE SENTIMIENTO PARA COMPATIBILIDAD
   if not isinstance(sentiment_value, str):
     return None
   
@@ -316,8 +370,12 @@ def _normalize_sentiment(sentiment_value) -> Optional[str]:
   
   return None
 
+# ================================================================
+# CALCULAR CORRELACIÓN RATING VS SENTIMIENTO
+# ================================================================
+
 def _calculate_rating_sentiment_correlation(stats: Dict) -> None:
-  """Calcula correlación entre rating y sentimiento IA"""
+  # CALCULA CORRELACIÓN ENTRE RATING Y SENTIMIENTO IA
   total_with_both = 0
   aligned_count = 0
   discrepancies = []
@@ -359,9 +417,12 @@ def _calculate_rating_sentiment_correlation(stats: Dict) -> None:
   stats["rating_sentiment_correlation"]["discrepancies"] = discrepancies
   stats["rating_sentiment_correlation"]["alignment_score"] = round(alignment_score, 1)
 
-# Visualizaciones
+# ================================================================
+# MOSTRAR GRÁFICO DE RATINGS
+# ================================================================
+
 def display_individual_ratings_bar_chart(stats_data: Dict) -> None:
-  """Gráfico de distribución de ratings 1-5 estrellas"""
+  # GRÁFICO DE DISTRIBUCIÓN DE RATINGS 1-5 ESTRELLAS
   data = stats_data.get("rating_individual_summary", {})
   
   df_data = {
@@ -397,16 +458,19 @@ def display_individual_ratings_bar_chart(stats_data: Dict) -> None:
   fig.update_layout(showlegend=False, height=400, coloraxis_showscale=False) 
   st.plotly_chart(fig, use_container_width=True)
 
+# ================================================================
+# MOSTRAR GRÁFICO DE SENTIMIENTOS
+# ================================================================
+
 def display_multilingual_sentiment_chart(stats_data: Dict) -> None:
-  """Gráfico de sentimientos multilingual 0-4"""
+  # GRÁFICO DE SENTIMIENTOS MULTILINGUAL 0-4
   data = stats_data.get("sentiment_summary", {})
   
   sentiment_order = ["VERY_NEGATIVE", "NEGATIVE", "NEUTRAL", "POSITIVE", "VERY_POSITIVE"]
   sentiment_labels = ["Muy Negativo (0)", "Negativo (1)", "Neutral (2)", "Positivo (3)", "Muy Positivo (4)"]
-  sentiment_emojis = ["😞", "😕", "😐", "😊", "🤩"]
   
   df_data = {
-    "Sentimiento": [f"{emoji} {label}" for emoji, label in zip(sentiment_emojis, sentiment_labels)],
+    "Sentimiento": sentiment_labels,
     "Cantidad": [data.get(sentiment, 0) for sentiment in sentiment_order],
     "Score": [SENTIMENT_VALUES[sentiment] for sentiment in sentiment_order]
   }
@@ -444,8 +508,12 @@ def display_multilingual_sentiment_chart(stats_data: Dict) -> None:
   )
   st.plotly_chart(fig, use_container_width=True)
 
+# ================================================================
+# MOSTRAR ANÁLISIS DE CORRELACIÓN
+# ================================================================
+
 def display_rating_sentiment_correlation_analysis(stats_data: Dict) -> None:
-  """Análisis de correlación rating vs sentimiento IA"""
+  # ANÁLISIS DE CORRELACIÓN RATING VS SENTIMIENTO IA
   correlation_data = stats_data.get("rating_sentiment_correlation", {})
   alignment_score = correlation_data.get("alignment_score", 0)
   discrepancies = correlation_data.get("discrepancies", [])
@@ -485,8 +553,12 @@ def display_rating_sentiment_correlation_analysis(stats_data: Dict) -> None:
   else:
     st.success("No se detectaron discrepancias significativas")
 
+# ================================================================
+# MOSTRAR COMPARACIÓN DETALLADA
+# ================================================================
+
 def display_rating_sentiment_detailed_comparison(stats_data: Dict) -> None:
-  """Comparación detallada Rating vs Sentimiento IA"""
+  # COMPARACIÓN DETALLADA RATING VS SENTIMIENTO IA
   data_for_df = []
   sentiment_order = ["VERY_NEGATIVE", "NEGATIVE", "NEUTRAL", "POSITIVE", "VERY_POSITIVE"]
   sentiment_display = ["Muy Negativo (0)", "Negativo (1)", "Neutral (2)", "Positivo (3)", "Muy Positivo (4)"]
@@ -564,8 +636,12 @@ def display_rating_sentiment_detailed_comparison(stats_data: Dict) -> None:
   
   st.plotly_chart(fig, use_container_width=True)
 
+# ================================================================
+# MOSTRAR HISTOGRAMA DE SCORES
+# ================================================================
+
 def display_sentiment_score_histogram(stats_data: Dict) -> None:
-  """Histograma de distribución de scores de sentimiento"""
+  # HISTOGRAMA DE DISTRIBUCIÓN DE SCORES DE SENTIMIENTO
   scores = stats_data.get("sentiment_scores", [])
   
   if not scores:
@@ -595,9 +671,58 @@ def display_sentiment_score_histogram(stats_data: Dict) -> None:
   fig.update_layout(height=400)
   st.plotly_chart(fig, use_container_width=True)
 
-# Exportación
+# ================================================================
+# MOSTRAR DESGLOSE POR IDIOMA
+# ================================================================
+
+def display_language_breakdown_chart(stats_data: Dict) -> None:
+  # GRÁFICO DE DESGLOSE POR IDIOMA
+  language_data = stats_data.get("language_breakdown", {})
+  
+  if not language_data:
+    st.info("No hay datos de idiomas para mostrar")
+    return
+  
+  # Preparar datos para el gráfico
+  languages = []
+  counts = []
+  percentages = []
+  total_reviews = sum(language_data.values())
+  
+  for lang, count in sorted(language_data.items()):
+    lang_display = AVAILABLE_LANGUAGES.get(lang, lang.title())
+    languages.append(lang_display)
+    counts.append(count)
+    percentages.append((count / total_reviews * 100) if total_reviews > 0 else 0)
+  
+  df_lang = pd.DataFrame({
+    "Idioma": languages,
+    "Cantidad": counts,
+    "Porcentaje": percentages
+  })
+  
+  fig = px.pie(
+    df_lang,
+    values="Cantidad",
+    names="Idioma",
+    title="Distribución por Idioma",
+    hover_data={"Porcentaje": ":.1f%"}
+  )
+  
+  fig.update_traces(
+    textposition='inside',
+    textinfo='percent+label'
+  )
+  
+  fig.update_layout(height=400)
+  st.plotly_chart(fig, use_container_width=True)
+
+# ================================================================
+# PREPARAR DATOS PARA EXPORTACIÓN
+# ================================================================
+
 def _prepare_export_data(data_handler, selected_region_name: str, display_language: str = "all") -> Dict:
-  """Prepara datos filtrados para exportación - MULTILENGUAJE"""
+  # PREPARA DATOS FILTRADOS PARA EXPORTACIÓN MULTILENGUAJE
   regions_data = data_handler.data.get("regions", [])
   
   if selected_region_name == "Todas las regiones":
@@ -608,9 +733,8 @@ def _prepare_export_data(data_handler, selected_region_name: str, display_langua
       if r.get("region_name") == selected_region_name
     ]
   
-  # ✅ NUEVO: Filtrar por idioma si no es "all"
+  # Filtrar por idioma si no es "all"
   if display_language != "all":
-    # Crear copia profunda y filtrar por idioma
     import copy
     filtered_regions_copy = copy.deepcopy(filtered_regions)
     
@@ -640,15 +764,23 @@ def _prepare_export_data(data_handler, selected_region_name: str, display_langua
   
   return {"regions": filtered_regions}
 
+# ================================================================
+# GENERAR NOMBRE DE ARCHIVO
+# ================================================================
+
 def _generate_filename(region_name: str, display_language: str = "all") -> str:
-  """Genera nombre de archivo para exportación - ACTUALIZADO"""
+  # GENERA NOMBRE DE ARCHIVO PARA EXPORTACIÓN
   safe_region_name = region_name.replace(' ', '_').replace('/', '_')
   language_suffix = f"_{display_language}" if display_language != "all" else "_todos_idiomas"
   timestamp = datetime.now().strftime('%Y%m%d_%H%M')
   return f"datos_{safe_region_name}{language_suffix}_{timestamp}.xlsx"
 
+# ================================================================
+# MANEJAR EXPORTACIÓN A EXCEL
+# ================================================================
+
 def handle_excel_export(data_handler, selected_region_name: str, reviews_count: int, display_language: str = "all") -> None:
-  """Maneja exportación a Excel - ACTUALIZADA"""
+  # MANEJA EXPORTACIÓN A EXCEL CON SOPORTE MULTILENGUAJE
   if reviews_count == 0:
     st.error("No hay reseñas para exportar")
     return
@@ -671,7 +803,8 @@ def handle_excel_export(data_handler, selected_region_name: str, reviews_count: 
         if display_language == "all":
           st.success("Archivo Excel generado exitosamente (todos los idiomas)")
         else:
-          st.success(f"Archivo Excel generado exitosamente para {display_language}")
+          language_display = AVAILABLE_LANGUAGES.get(display_language, display_language.title())
+          st.success(f"Archivo Excel generado exitosamente para {language_display}")
       else:
         st.error("Error generando el archivo Excel")
         
@@ -679,42 +812,12 @@ def handle_excel_export(data_handler, selected_region_name: str, reviews_count: 
       log.error(f"Error exportación Excel: {e}")
       st.error(f"Error generando archivo: {str(e)}")
 
-def _render_export_section(data_handler, selected_region: str, reviews_count: int, display_language: str = "all") -> None:
-  """Renderiza sección de exportación - ACTUALIZADA"""
-  col_filter1, col_filter2, col_download = st.columns([2, 2, 1])
-  
-  with col_download:
-    if st.button("Generar Excel", key="main_download_button"):
-      handle_excel_export(data_handler, selected_region, reviews_count, display_language)
-
-# Interfaz principal
-def render(data_handler):
-  """Renderiza página de análisis comparativo"""
-  st.header("Análisis Comparativo: Rating vs Texto")
-  st.markdown("Comparación entre puntuación (1-5 estrellas) y análisis de sentimiento por IA")
-  st.caption("Modelo multilingual (escala 0-4): tabularisai/multilingual-sentiment-analysis")
-  
-  if not _validate_data_availability(data_handler):
-    return
-  
-  region_names = _get_available_regions(data_handler)
-  if not region_names:
-    st.warning("No hay regiones disponibles para mostrar")
-    return
-  
-  # ✅ NUEVO: Agregar selector de idioma
-  selected_region, display_language = _render_filters_section(region_names)
-  reviews_data = get_all_reviews_for_ui(data_handler, selected_region, display_language)  # ✅ ACTUALIZADO
-  _render_export_section(data_handler, selected_region, len(reviews_data))
-  
-  if reviews_data:
-    _render_analysis_section(reviews_data, display_language)  # ✅ ACTUALIZADO
-    _render_detailed_data_section(reviews_data)
-  else:
-    st.info(f"No hay reseñas disponibles para '{selected_region}' en {display_language}")
+# ================================================================
+# VALIDAR DISPONIBILIDAD DE DATOS
+# ================================================================
 
 def _validate_data_availability(data_handler) -> bool:
-  """Valida disponibilidad de datos"""
+  # VALIDA DISPONIBILIDAD DE DATOS
   if not hasattr(data_handler, 'data') or not data_handler.data:
     st.error("No hay datos disponibles en el sistema")
     return False
@@ -725,8 +828,12 @@ def _validate_data_availability(data_handler) -> bool:
   
   return True
 
+# ================================================================
+# OBTENER REGIONES DISPONIBLES
+# ================================================================
+
 def _get_available_regions(data_handler) -> List[str]:
-  """Obtiene lista de regiones disponibles"""
+  # OBTIENE LISTA DE REGIONES DISPONIBLES
   regions_data = data_handler.data.get("regions", [])
   region_names = [
     r.get("region_name") 
@@ -735,8 +842,12 @@ def _get_available_regions(data_handler) -> List[str]:
   ]
   return sorted(list(set(region_names)))
 
-def _render_filters_section(region_names: List[str]) -> tuple[str, str]:
-  """Renderiza sección de filtros - ACTUALIZADA MULTILENGUAJE"""
+# ================================================================
+# RENDERIZAR SECCIÓN DE FILTROS
+# ================================================================
+
+def _render_filters_section(region_names: List[str], data_handler) -> tuple[str, str]:
+  # RENDERIZA SECCIÓN DE FILTROS CON SOPORTE MULTILENGUAJE
   st.subheader("Filtros y Descarga")
   
   col_filter1, col_filter2, col_download = st.columns([2, 2, 1])
@@ -748,36 +859,61 @@ def _render_filters_section(region_names: List[str]) -> tuple[str, str]:
       key="region_selector_results"
     )
   
-  # ✅ NUEVO: Selector de idioma
   with col_filter2:
-    display_language = st.selectbox(
+    # Obtener idiomas disponibles dinámicamente
+    available_languages = get_available_languages_from_data(data_handler)
+    
+    # Crear opciones legibles para el selector
+    language_options = []
+    for lang_code in available_languages:
+      if lang_code in AVAILABLE_LANGUAGES:
+        language_options.append(AVAILABLE_LANGUAGES[lang_code])
+      else:
+        language_options.append(lang_code.title())
+    
+    selected_language_display = st.selectbox(
       "Idioma de análisis:",
-      options=["all", "english", "spanish", "portuguese", "french", "german"],
-      index=0,
+      options=language_options,
       help="Idioma para filtrar reseñas analizadas",
       key="results_language_select"
     )
+    
+    # Convertir de vuelta a código de idioma
+    display_language = "all"
+    for lang_code, lang_display in AVAILABLE_LANGUAGES.items():
+      if lang_display == selected_language_display:
+        display_language = lang_code
+        break
   
   return selected_region, display_language
 
-def _render_export_section(data_handler, selected_region: str, reviews_count: int) -> None:
-  """Renderiza sección de exportación"""
-  col_filter, col_download = st.columns([3, 1])
+# ================================================================
+# RENDERIZAR SECCIÓN DE EXPORTACIÓN
+# ================================================================
+
+def _render_export_section(data_handler, selected_region: str, reviews_count: int, display_language: str = "all") -> None:
+  # RENDERIZA SECCIÓN DE EXPORTACIÓN
+  col_download = st.columns([1])[0]
   
   with col_download:
     if st.button("Generar Excel", key="main_download_button"):
-      handle_excel_export(data_handler, selected_region, reviews_count)
+      handle_excel_export(data_handler, selected_region, reviews_count, display_language)
+
+# ================================================================
+# RENDERIZAR SECCIÓN DE ANÁLISIS
+# ================================================================
 
 def _render_analysis_section(reviews_data: List[Dict], display_language: str = "all") -> None:
-  """Renderiza sección principal de análisis - ACTUALIZADA MULTILENGUAJE"""
+  # RENDERIZA SECCIÓN PRINCIPAL DE ANÁLISIS CON SOPORTE MULTILENGUAJE
   stats = calculate_sentiment_stats(reviews_data)
   
-  # ✅ NUEVO: Información de idioma en el encabezado
+  # Información de idioma en el encabezado
   st.subheader("Métricas Clave")
   if display_language == "all":
     st.caption("📊 Análisis de todas las reseñas en todos los idiomas disponibles")
   else:
-    st.caption(f"📊 Análisis filtrado para reseñas en: **{display_language.title()}**")
+    language_display = AVAILABLE_LANGUAGES.get(display_language, display_language.title())
+    st.caption(f"📊 Análisis filtrado para reseñas en: **{language_display}**")
   
   col1, col2, col3, col4 = st.columns(4)
   
@@ -791,25 +927,26 @@ def _render_analysis_section(reviews_data: List[Dict], display_language: str = "
   col3.metric("Sentimiento Promedio", f"{avg_sentiment:.2f}/4.0")
   col4.metric("Correlación Rating-IA", f"{alignment_score:.1f}%")
   
-  # ✅ NUEVO: Desglose por idioma si es "all"
+  # Desglose por idioma si es "all"
   if display_language == "all" and reviews_data:
     st.markdown("#### Desglose por Idioma")
-    language_breakdown = {}
-    for review in reviews_data:
-      if _has_sentiment_analysis(review):
-        lang = review.get("language", "unknown")
-        language_breakdown[lang] = language_breakdown.get(lang, 0) + 1
+    language_breakdown = stats.get("language_breakdown", {})
     
     if language_breakdown:
+      # Mostrar métricas por idioma
       lang_cols = st.columns(min(len(language_breakdown), 5))
       for i, (lang, count) in enumerate(sorted(language_breakdown.items())):
         if i < len(lang_cols):
           percentage = (count / valid_analyzed * 100) if valid_analyzed > 0 else 0
+          lang_display = AVAILABLE_LANGUAGES.get(lang, lang.title())
           lang_cols[i].metric(
-            f"{lang.title()}", 
+            lang_display, 
             f"{count:,}",
             f"{percentage:.1f}%"
           )
+      
+      # Gráfico de distribución por idioma
+      display_language_breakdown_chart(stats)
   
   # Métricas por sentimiento
   st.markdown("---")
@@ -856,8 +993,12 @@ def _render_analysis_section(reviews_data: List[Dict], display_language: str = "
   st.subheader("Comparación Detallada")
   display_rating_sentiment_detailed_comparison(stats)
 
+# ================================================================
+# RENDERIZAR SECCIÓN DE DATOS DETALLADOS
+# ================================================================
+
 def _render_detailed_data_section(reviews_data: List[Dict]) -> None:
-  """Renderiza sección de datos detallados"""
+  # RENDERIZA SECCIÓN DE DATOS DETALLADOS
   if st.checkbox("Mostrar datos detallados de reseñas", key="show_detailed_data"):
     st.subheader("Datos Detallados de Reseñas")
     
@@ -883,3 +1024,33 @@ def _render_detailed_data_section(reviews_data: List[Dict]) -> None:
     except Exception as e:
       log.error(f"Error mostrando datos detallados: {e}")
       st.error("Error al mostrar los datos detallados")
+
+# ================================================================
+# RENDERIZAR PÁGINA PRINCIPAL
+# ================================================================
+
+def render(data_handler):
+  # RENDERIZA PÁGINA DE ANÁLISIS COMPARATIVO CON SOPORTE MULTILENGUAJE
+  st.header("Análisis Comparativo: Rating vs Texto")
+  st.markdown("Comparación entre puntuación (1-5 estrellas) y análisis de sentimiento por IA")
+  st.caption("Modelo multilingual (escala 0-4): tabularisai/multilingual-sentiment-analysis")
+  
+  if not _validate_data_availability(data_handler):
+    return
+  
+  region_names = _get_available_regions(data_handler)
+  if not region_names:
+    st.warning("No hay regiones disponibles para mostrar")
+    return
+  
+  # Selector de región e idioma
+  selected_region, display_language = _render_filters_section(region_names, data_handler)
+  reviews_data = get_all_reviews_for_ui(data_handler, selected_region, display_language)
+  _render_export_section(data_handler, selected_region, len(reviews_data), display_language)
+  
+  if reviews_data:
+    _render_analysis_section(reviews_data, display_language)
+    _render_detailed_data_section(reviews_data)
+  else:
+    language_display = AVAILABLE_LANGUAGES.get(display_language, display_language.title())
+    st.info(f"No hay reseñas disponibles para '{selected_region}' en {language_display}")

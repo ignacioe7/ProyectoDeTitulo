@@ -26,15 +26,22 @@ if not DATA_DIR.exists():
 CONSOLIDATED_DATA_PATH = str(DATA_DIR / "consolidated_data.json") 
 
 class PathConfig:
-  """rutas principales del proyecto"""
+  # RUTAS PRINCIPALES DEL PROYECTO
+  # Define ubicaciones de archivos y directorios importantes
+  # Usa pathlib para compatibilidad multiplataforma
+  
   # archivos principales
   CONSOLIDATED_JSON = DATA_DIR / "consolidated_data.json" # datos consolidados
   REGIONS_DIR = DATA_DIR / "regions" # carpeta regiones
   REGIONS_FILE = REGIONS_DIR / "regions.json" # config regiones
   LOGS_DIR = PROJECT_ROOT / "logs" # carpeta logs
 
-# === HELPERS ===
+# ===============================================================
+# GENERAR HEADERS CON REFERER
+# ===============================================================
 
 def get_headers(referer: str = BASE_URL) -> dict:
-  """genera headers con referer personalizado"""
+  # GENERA HEADERS CON REFERER PERSONALIZADO
+  # Combina headers base con referer especifico
+  # Util para simular navegacion real entre paginas
   return {**HEADERS, "Referer": referer}

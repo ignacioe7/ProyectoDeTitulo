@@ -1,8 +1,14 @@
 import asyncio
 import random
 
+# ===============================================================
+# PAUSA INTELIGENTE
+# ===============================================================
+
 async def smart_sleep(current_page: int, base_delay: float = 3.0):
-  """pausa inteligente para evitar ser bloqueado en poco tiempo por tripadvisor"""
+  # PAUSA INTELIGENTE PARA EVITAR BLOQUEOS DE TRIPADVISOR
+  # Incrementa delays progresivamente y añade pausas largas en intervalos
+  # Ayuda a mantener el scraping sin ser detectado como bot
   delay = base_delay 
   
   if current_page % 100 == 0:
