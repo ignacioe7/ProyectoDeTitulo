@@ -343,7 +343,7 @@ class ReviewScraper:
       language_data = languages_dict.get(self.target_language, {})
      
       # Datos del idioma especifico
-      current_scraped_reviews = len(language_data.get("reviews", []))
+      current_scraped_reviews = len(language_data.get("reviews", [])) + len(language_data.get("skipped_duplicates", []))
       stored_language_count = language_data.get("reviews_count", 0)
       is_previously_scraped = language_data.get("previously_scraped", False)
      
