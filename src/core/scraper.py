@@ -343,9 +343,19 @@ class ReviewScraper:
       language_data = languages_dict.get(self.target_language, {})
      
       # Datos del idioma especifico
-      current_scraped_reviews = len(language_data.get("reviews", [])) + len(language_data.get("skipped_duplicates", []))
+      stored_reviews_count = language_data.get("stored_reviews", 0)
+      skipped_duplicates_count = len(language_data.get("skipped_duplicates", []))
+      current_scraped_reviews = stored_reviews_count + skipped_duplicates_count
       stored_language_count = language_data.get("reviews_count", 0)
       is_previously_scraped = language_data.get("previously_scraped", False)
+     
+      log.debug(f"🔍 {attraction_name_for_log} ({self.target_language}): "
+               f"stored_reviews={stored_reviews_count}, "
+               f"skipped_duplicates={skipped_duplicates_count}, "
+               f"total_processed={current_scraped_reviews}, "
+               f"expected={stored_language_count}, "
+               f"missing={stored_language_count - current_scraped_reviews}, "
+               f"previously_scraped={is_previously_scraped}")
      
       log.debug(f"🔍 {attraction_name_for_log} ({self.target_language}): "
                f"scraped={current_scraped_reviews}, "
@@ -368,26 +378,32 @@ class ReviewScraper:
         })
 
       # Recalcular despues de correccion
-      effective_language_count = att_data_for_priority.get("languages", {}).get(self.target_language, {}).get("reviews_count", 0)
-      is_previously_scraped = att_data_for_priority.get("languages", {}).get(self.target_language, {}).get("previously_scraped", False)
+      effective_language_data = att_data_for_priority.get("languages", {}).get(self.target_language, {})
+      effective_language_count = effective_language_data.get("reviews_count", 0)
+      effective_stored_reviews = effective_language_data.get("stored_reviews", 0)
+      effective_skipped_duplicates = len(effective_language_data.get("skipped_duplicates", []))
+      effective_total_processed = effective_stored_reviews + effective_skipped_duplicates
+      is_previously_scraped = effective_language_data.get("previously_scraped", False)
 
-      # Asignar prioridad basada en el idioma especifico
+      # Asignar prioridad basada en el idioma específico
       if not is_previously_scraped:
         # P1: Nunca scrapeado en este idioma
         log.debug(f"📋 P1 nueva en {self.target_language}: {attraction_name_for_log}")
         p1_newly_scraped.append(att_data_for_priority)
       else:
         # Ya fue scrapeado anteriormente en este idioma
-        if effective_language_count == 0 and current_scraped_reviews == 0:
+        if effective_language_count == 0 and effective_total_processed == 0:
           # P5: No hay reseñas en este idioma
           log.debug(f"📋 P5 sin reseñas en {self.target_language}: {attraction_name_for_log}")
           p5_zero_zero_scraped.append(att_data_for_priority)
         else:
-          # Calcular faltantes en este idioma especifico
-          missing_reviews = effective_language_count - current_scraped_reviews
+          # Calcular faltantes en este idioma específico
+          missing_reviews = effective_language_count - effective_total_processed
           if missing_reviews > DEFER_THRESHOLD:
             # P2: Muchas reseñas faltantes en este idioma
-            log.debug(f"📋 P2 muchas faltantes en {self.target_language}: {attraction_name_for_log} ({missing_reviews})")
+            log.debug(f"📋 P2 muchas faltantes en {self.target_language}: {attraction_name_for_log} "
+                     f"(faltantes={missing_reviews}, stored={effective_stored_reviews}, "
+                     f"skipped={effective_skipped_duplicates}, total_expected={effective_language_count})")
             p2_many_missing.append(att_data_for_priority)
           elif 0 < missing_reviews <= DEFER_THRESHOLD:
             # P3: Pocas reseñas faltantes en este idioma
@@ -397,6 +413,10 @@ class ReviewScraper:
             # P4: Actualizada en este idioma
             log.debug(f"📋 P4 actualizada en {self.target_language}: {attraction_name_for_log}")
             p4_up_to_date.append(att_data_for_priority)
+    
+    # Imprimir nombres de atracciones en P2
+    p2_names = [att.get("attraction_name", "Atracción Desconocida") for att in p2_many_missing]
+    log.info(f"Lista P2 (muchas faltantes): {p2_names}")
   
     # Combinar listas por prioridad
     ordered_attractions_to_scrape = (

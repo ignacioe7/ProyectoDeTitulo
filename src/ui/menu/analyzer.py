@@ -225,19 +225,22 @@ def display_current_stats(data_handler, region_names_to_show: List[str]):
       else:
         language_options.append(lang_code.title())
     
+    # Determinar contexto para clave única
+    analysis_active = st.session_state.get('analysis_active', False)
+    context_suffix = "during_analysis" if analysis_active else "manual_view"
+    
     selected_language_display = st.selectbox(
       "Seleccionar idioma:",
       options=language_options,
-      key="stats_language_display_selector"
+      key=f"stats_language_display_selector_{context_suffix}"
     )
     
     # Convertir nombre legible de vuelta a código de idioma
-    display_language = "all"
     for lang_code, lang_display in AVAILABLE_LANGUAGES.items():
       if lang_display == selected_language_display:
         display_language = lang_code
         break
-  
+
   # Recargar datos antes de calcular estadísticas
   try:
     data_handler.reload_data()
