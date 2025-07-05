@@ -190,11 +190,19 @@ class ReviewParser:
   # ===============================================================
 
   def _extract_text(self, card: Selector) -> str:
-    # Obtiene contenido completo de la reseña
-    # Une todos los fragmentos de texto en una cadena
-    texts = card.xpath(".//div[contains(@class, 'KxBGd')]//text()").getall()
-    full_text = " ".join(t.strip() for t in texts if t.strip())
-    return full_text or "Sin texto"
+      # Obtiene contenido completo de la reseña
+      # Maneja múltiples estructuras posibles
+      
+      # Selector principal
+      texts = card.xpath(".//div[contains(@class, 'KxBGd')]//text()").getall()
+      full_text = " ".join(t.strip() for t in texts if t.strip())
+      
+      # Si no encuentra texto, probar selector alternativo para yCeTE
+      if not full_text or full_text == "Sin texto":
+          texts = card.xpath(".//span[contains(@class, 'yCeTE')]/text()").getall()
+          full_text = " ".join(t.strip() for t in texts if t.strip())
+      
+      return full_text or "Sin texto"
 
   # ===============================================================
   # EXTRAER UBICACION DEL USUARIO
