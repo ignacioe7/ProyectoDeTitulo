@@ -200,26 +200,79 @@ class ReviewParser:
   # EXTRAER UBICACION DEL USUARIO
   # ===============================================================
 
+  
   def _extract_location(self, card: Selector) -> str:
     # Obtiene ubicacion geografica del usuario
-    # Filtra numeros para evitar contribuciones
-    location = card.xpath(".//div[contains(@class, 'vYLts')]//span[1]/text()").get("")
-    return location.strip() if location and not location.strip().isdigit() else "Sin ubicación"
-
+    # Maneja casos con y sin contribuciones
+    
+    # Buscar contenedor principal
+    vYLts_container = card.xpath(".//div[contains(@class, 'vYLts')]")
+    if not vYLts_container:
+      return "Sin ubicación"
+    
+    # Obtener todos los spans dentro del contenedor
+    spans = vYLts_container[0].xpath(".//span")
+    
+    for span in spans:
+      text = span.xpath("./text()").get("")
+      if text and text.strip():
+        # Verificar si NO es un número de contribuciones
+        # Patrones de contribuciones en diferentes idiomas
+        contribution_patterns = [
+          r'\d+\s*(contribut|contribuição|contribution|avis|bewertung|recensioni|beoordelingen|отзыв|مساهمات|贡献|レビュー|리뷰|件の投稿|beiträge)',
+          r'\d+\s*contribut',  # General para contribuciones
+          r'^\d+$',            # Solo números
+        ]
+        
+        is_contribution = False
+        for pattern in contribution_patterns:
+          if re.search(pattern, text.strip(), re.IGNORECASE):
+            is_contribution = True
+            break
+        
+        # Si no es contribución y no es solo dígitos, es ubicación
+        if not is_contribution and not text.strip().isdigit():
+          return text.strip()
+    
+    return "Sin ubicación"
+  
   # ===============================================================
   # EXTRAER NUMERO DE CONTRIBUCIONES
   # ===============================================================
-
+  
   def _extract_contributions(self, card: Selector) -> int:
     # Obtiene numero total de contribuciones del usuario
-    # Soporte para multiples idiomas
+    # Maneja múltiples idiomas y formatos
+    
+    # Selectores mejorados que cubren más casos
     contribution_selectors = [
+      # Selector principal por clase
       ".//div[contains(@class, 'vYLts')]//span[contains(@class, 'IugUm')]/text()",
-      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'contribut') or contains(text(), 'reseña') or contains(text(), 'review')]/text()",
-      ".//span[contains(text(), 'contribuciones')]/text()",
-      ".//span[contains(text(), 'contributions')]/text()",
+      
+      # Selectores por contenido de texto - más específicos
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'contribut')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'contribution')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'contribuição')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'reseña')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'review')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'avis')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'bewertung')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'beiträge')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'recensioni')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'beoordelingen')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'отзыв')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'مساهمات')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), '贡献')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), 'レビュー')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), '件の投稿')]/text()",
+      ".//div[contains(@class, 'vYLts')]//span[contains(text(), '리뷰')]/text()",
+      
+      # Selectores más generales como fallback
+      ".//span[contains(text(), 'contribut')]/text()",
+      ".//span[contains(text(), 'contribution')]/text()",
       ".//span[contains(text(), 'avis')]/text()",
-      ".//span[contains(text(), 'bewertungen')]/text()",
+      ".//span[contains(text(), 'bewertung')]/text()",
+      ".//span[contains(text(), 'beiträge')]/text()",
       ".//span[contains(text(), 'recensioni')]/text()",
       ".//span[contains(text(), 'beoordelingen')]/text()",
       ".//span[contains(text(), 'отзыв')]/text()",
@@ -227,22 +280,40 @@ class ReviewParser:
       ".//span[contains(text(), 'contribuições')]/text()",
       ".//span[contains(text(), '贡献')]/text()",
       ".//span[contains(text(), 'レビュー')]/text()",
+      ".//span[contains(text(), '件の投稿')]/text()",
       ".//span[contains(text(), '리뷰')]/text()",
     ]
     
     contrib_text = ""
     for selector in contribution_selectors:
       contrib_text = card.xpath(selector).get()
-      if contrib_text:
+      if contrib_text and contrib_text.strip():
         break
     
     if not contrib_text:
       contrib_text = "0"
     
-    # Extrae primer numero encontrado
-    digits = re.findall(r'\d+', contrib_text)
-    if digits:
-      return int(digits[0])
+    # Extraer números, manejando separadores de miles
+    # Remover caracteres no numéricos excepto comas y puntos
+    clean_text = re.sub(r'[^\d,.\s]', ' ', contrib_text)
+    
+    # Buscar patrones de números con separadores de miles
+    number_patterns = [
+      r'(\d{1,3}(?:[,.\s]\d{3})*)',  # 1,158 o 1.158 o 1 158
+      r'(\d+)',                       # Cualquier número
+    ]
+    
+    for pattern in number_patterns:
+      matches = re.findall(pattern, clean_text)
+      if matches:
+        # Tomar el primer número encontrado
+        number_str = matches[0]
+        # Limpiar separadores de miles
+        number_str = re.sub(r'[,.\s]', '', number_str)
+        try:
+          return int(number_str)
+        except ValueError:
+          continue
     
     return 0
   
