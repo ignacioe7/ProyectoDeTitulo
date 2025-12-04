@@ -28,7 +28,7 @@ def render():
     - Manejo automático de errores
     
     **Scraping de Reseñas:**
-    - Reseñas en inglés únicamente
+    - Reseñas en múltiples idiomas
     - Control de concurrencia
     - Pausa inteligente anti-bloqueo
     """)

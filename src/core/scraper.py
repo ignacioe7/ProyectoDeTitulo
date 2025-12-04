@@ -123,7 +123,18 @@ class AttractionScraper:
           
           # Rating
           rating_element = card.xpath('.//div[@data-automation="bubbleRatingValue"]')
-          if rating_element:
+          if not rating_element:
+            # Selector alternativo para el span con rating
+            rating_element = card.xpath('.//span[contains(@class, "")]/text()[matches(., "^\d+(\.\d+)?$")]')
+            if rating_element:
+              try:
+                rating_value = float(rating_element.get().strip())
+                if 0 <= rating_value <= 5:
+                  attraction_data["rating"] = rating_value
+                  log.debug(f"Rating extraído (alternativo): {rating_value}")
+              except (ValueError, AttributeError):
+                log.debug(f"Error parsing rating alternativo")
+          else:
             rating_text = rating_element.xpath('text()').get()
             if rating_text:
               try:
@@ -134,6 +145,20 @@ class AttractionScraper:
               except ValueError:
                 log.debug(f"Error parsing rating: {rating_text}")
           
+          if attraction_data["rating"] == 0.0:
+            # Buscar cualquier span que contenga un número decimal válido para rating
+            all_spans = card.xpath('.//span/text()').getall()
+            for span_text in all_spans:
+              if span_text and span_text.strip():
+                try:
+                  potential_rating = float(span_text.strip())
+                  if 1.0 <= potential_rating <= 5.0:  # Rango válido para ratings
+                    attraction_data["rating"] = potential_rating
+                    log.debug(f"Rating encontrado en span genérico: {potential_rating}")
+                    break
+                except ValueError:
+                  continue
+
           # Numero de reseñas
           reviews_element = card.xpath('.//div[@data-automation="bubbleLabel"]')
           if reviews_element:
@@ -152,16 +177,35 @@ class AttractionScraper:
                 log.debug(f"Error parsing reviews count: {reviews_text}")
           
           # Tipo de lugar
-          type_element = card.xpath('.//div[contains(@class, "dxkoL")]//div[contains(@class, "biGQs") and contains(@class, "hmDzD")]')
+          type_element = card.xpath('.//div[contains(@class, "biGQs") and contains(@class, "_P")]')
+          if not type_element:
+            # Selector más específico para tu estructura
+            type_element = card.xpath('.//div[contains(@class, "biGQs") and contains(@class, "pZUbB")]')
+          
           if type_element:
             type_text = type_element.xpath('text()').get()
             if type_text and type_text.strip():
-              # Limpiar HTML entities
+              # Limpiar HTML entities y validar
               clean_type = type_text.strip().replace('&amp;', '&')
-              # Validar que no sea rating o numero
-              if not any(c.isdigit() for c in clean_type) and '.' not in clean_type:
+              
+              # Validar que no sea rating, número o fecha
+              if (len(clean_type) > 3 and  # Mínimo 3 caracteres
+                  not re.match(r'^\d+[\d\s,.\-]*$', clean_type) and  # No solo números
+                  not re.match(r'^\d+(\.\d+)?$', clean_type) and    # No ratings
+                  clean_type.lower() not in ['reviews', 'review', 'reseñas', 'reseña']):  # No palabras meta
                 attraction_data["place_type"] = clean_type
                 log.debug(f"Tipo extraído: {clean_type}")
+          
+          # Si no se encontró tipo, buscar en divs con texto que contenga "•"
+          if attraction_data["place_type"] == "Sin Categoría":
+            category_divs = card.xpath('.//div[contains(text(), "•")]')
+            for div in category_divs:
+              div_text = div.xpath('text()').get()
+              if div_text and div_text.strip() and len(div_text.strip()) > 5:
+                clean_type = div_text.strip().replace('&amp;', '&')
+                attraction_data["place_type"] = clean_type
+                log.debug(f"Tipo encontrado en div genérico: {clean_type}")
+                break
           
           # Validacion: solo agregar si tiene datos basicos validos
           if (attraction_data["url"] and 
