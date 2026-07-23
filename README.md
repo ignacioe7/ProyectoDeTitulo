@@ -1,8 +1,8 @@
-# 🚀 Análisis de Sentimientos en Reseñas Turísticas
+# Análisis de Sentimientos en Reseñas Turísticas
 
 Un proyecto de investigación académica para analizar sentimientos en reseñas de atracciones turísticas usando machine learning y NLP.
 
-## 📋 Características
+## Características
 
 - **Scraping inteligente** de datos de atracciones turísticas
 - **Análisis de sentimientos** usando DistilBERT
@@ -11,7 +11,7 @@ Un proyecto de investigación académica para analizar sentimientos en reseñas 
 - **Visualizaciones interactivas** de resultados
 - **Procesamiento concurrente** para mejor rendimiento
 
-## 🛠️ Tecnologías
+## Tecnologías
 
 - **Python 3.8+**
 - **Streamlit** - Interfaz web
@@ -20,7 +20,7 @@ Un proyecto de investigación académica para analizar sentimientos en reseñas 
 - **Pandas** - Manipulación de datos
 - **Plotly** - Visualizaciones
 
-## 📦 Instalación
+## Instalación
 
 ### 1. Clonar el repositorio
 ```bash
@@ -44,7 +44,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 🚀 Uso
+## Uso
 
 ### Ejecutar la aplicación
 ```bash
@@ -61,35 +61,18 @@ python -m streamlit run src/ui/streamlit_app.py
 5. **Visualizar resultados** - Genera gráficos y estadísticas
 6. **Exportar datos** - Guarda resultados en diferentes formatos
 
-## 📁 Estructura del proyecto
-
-```
-proyecto_cientifico/
-├── src/
-│   ├── core/           # Lógica principal
-│   │   ├── scraper.py  # Extracción de datos
-│   │   ├── analyzer.py # Análisis de sentimientos
-│   │   └── data_handler.py # Manejo de datos
-│   ├── ui/             # Interfaz de usuario
-│   │   └── streamlit_app.py
-│   └── utils/          # Utilidades y helpers
-├── data/               # Datos generados
-├── logs/               # Archivos de log
-└── requirements.txt    # Dependencias
-```
-
-## 🎯 Casos de uso
+## Casos de uso
 
 - **Investigación académica** sobre turismo y opinión pública
 - **Análisis de mercado** para destinos turísticos
 - **Estudios de satisfacción** de visitantes
 - **Benchmarking** de atracciones similares
 
-## ⚠️ Consideraciones legales y éticas
+## Consideraciones legales y éticas
 
 **IMPORTANTE**: Este proyecto es únicamente para fines educativos e investigación académica.
 
-### 📜 Responsabilidades del usuario
+### Responsabilidades del usuario
 
 Los usuarios son completamente responsables de:
 
@@ -99,44 +82,33 @@ Los usuarios son completamente responsables de:
 4. **Respetar robots.txt** y políticas de scraping del sitio web
 5. **No usar con fines comerciales** sin autorización explícita
 
-### 🚫 Limitaciones
+### Limitaciones
 
 - TripAdvisor **prohíbe explícitamente** la extracción automatizada de datos
 - Este código **NO debe usarse** para fines comerciales no autorizados
 - Los autores **NO se responsabilizan** del uso indebido o consecuencias legales
 - El software se proporciona **"tal cual"** sin garantías de ningún tipo
 
-### ✅ Uso recomendado
+### Uso recomendado
 
 - **Solo para investigación académica** con dataset pequeño
 - **Implementar delays** apropiados entre solicitudes
 - **Considerar APIs oficiales** cuando estén disponibles
 - **Citar apropiadamente** el uso de datos en publicaciones
 
-## 🤝 Contribuir
-
-Las contribuciones son bienvenidas para mejorar el proyecto educativo:
-
-1. Fork el repositorio
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
-
-## 📝 Licencia
+##  Licencia
 
 Este proyecto está bajo licencia MIT para uso educativo. Ver `LICENSE` para más detalles.
 
-## 👥 Autores
+## Autores
 
-- **Tu Nombre** - *Trabajo inicial* - [tu-usuario](https://github.com/tu-usuario)
+- Dorien Canales
+- Ignacio Villalobos
 
-## 🙏 Agradecimientos
+## Agradecimientos
 
 - Comunidad de Hugging Face por los modelos de NLP
 - Streamlit por la plataforma de desarrollo
 - Contribuidores de las librerías open source utilizadas
 
 ---
-
-**⚡ Nota**: Este README está escrito con fines educativos. Siempre verifica la legalidad del web scraping en tu jurisdicción y respeta los términos de servicio de los sitios web.
